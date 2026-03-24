@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>진의 신비한 정원 도우미</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">JIN'S MYSTIC GARDEN HELPER</p>
+          <h1>스크린샷 자동 탐지 기반 최적 주사위 추천</h1>
+          <p class="hero-copy">
+            이제 기본 흐름은 수동 입력이 아니라 자동 탐지입니다. 사용자가 이미지를 올리면 보드, 현재 위치,
+            주사위 3개를 먼저 추정하고, 사용자는 그 결과를 검토하거나 필요한 부분만 수정하면 됩니다.
+          </p>
+        </div>
+        <div class="hero-card">
+          <div class="hero-stat">
+            <span>업로드 방식</span>
+            <strong>클릭 · 드래그 · 붙여넣기</strong>
+          </div>
+          <div class="hero-stat">
+            <span>탐지 방식</span>
+            <strong>보드 템플릿 + OCR + 색상 분류</strong>
+          </div>
+          <div class="hero-stat">
+            <span>계산 기준</span>
+            <strong>3개 주사위 완전탐색</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>1. 이미지 업로드</h2>
+            <button id="load-sample" class="ghost-button" type="button">샘플 데이터 복원</button>
+          </div>
+
+          <label class="upload-dropzone" id="upload-dropzone" for="image-input">
+            <input id="image-input" type="file" accept="image/*" />
+            <span>클릭해서 업로드하거나 이미지를 드래그해서 놓아 주세요.</span>
+            <strong>Ctrl+V 붙여넣기도 지원</strong>
+          </label>
+
+          <div class="preview-frame">
+            <img id="preview-image" alt="업로드한 이벤트 스크린샷 미리보기" />
+            <canvas id="preview-overlay"></canvas>
+            <div id="preview-empty" class="preview-empty">
+              아직 업로드된 이미지가 없어요. 이미지를 올리면 자동으로 보드와 주사위를 탐지해 아래 검토 패널에
+              채워 넣습니다.
+            </div>
+          </div>
+
+          <div class="hint-box">
+            <strong>탐지 우선 원칙</strong>
+            <p>
+              기본값은 자동 탐지입니다. 사용자는 탐지된 현재 위치, 발판 타입, 주사위 값과 특수효과가 맞는지
+              빠르게 검토하고 필요한 부분만 수정하면 됩니다.
+            </p>
+          </div>
+
+          <div class="subsection">
+            <div class="subsection-heading">
+              <h3>디버그 오버레이</h3>
+            </div>
+            <div class="debug-panel">
+              <div class="debug-meta" id="debug-meta">아직 디버그 정보가 없어요.</div>
+              <div class="debug-preview">
+                <canvas id="debug-roi-canvas"></canvas>
+              </div>
+              <div class="manual-panel">
+                <div class="manual-group">
+                  <h4>보드판 ROI 수동 보정</h4>
+                  <div class="manual-grid">
+                    <label>X<input id="manual-board-x" type="number" min="0" step="1" /></label>
+                    <label>Y<input id="manual-board-y" type="number" min="0" step="1" /></label>
+                    <label>W<input id="manual-board-w" type="number" min="1" step="1" /></label>
+                    <label>H<input id="manual-board-h" type="number" min="1" step="1" /></label>
+                  </div>
+                  <button id="apply-board-roi" class="ghost-button" type="button">보드판 ROI 적용</button>
+                </div>
+                <div class="manual-group">
+                  <h4>주사위 ROI 수동 보정</h4>
+                  <div class="manual-grid">
+                    <label>X<input id="manual-dice-x" type="number" min="0" step="1" /></label>
+                    <label>Y<input id="manual-dice-y" type="number" min="0" step="1" /></label>
+                    <label>W<input id="manual-dice-w" type="number" min="1" step="1" /></label>
+                    <label>H<input id="manual-dice-h" type="number" min="1" step="1" /></label>
+                  </div>
+                  <button id="apply-dice-roi" class="ghost-button" type="button">주사위 ROI 적용</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>2. 자동 탐지 검토</h2>
+            <button id="solve-button" class="primary-button" type="button">다시 계산</button>
+          </div>
+
+          <div class="detection-status" id="detection-status">
+            이미지를 기다리는 중입니다.
+          </div>
+
+          <div class="control-grid">
+            <label>
+              현재 위치
+              <select id="current-position"></select>
+            </label>
+            <label>
+              물음표 발판 처리
+              <select id="question-policy">
+                <option value="higher">더 높은 기대값 경로 선택</option>
+                <option value="average">좌/우 기대값 평균</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="subsection">
+            <div class="subsection-heading">
+              <h3>자동 탐지된 주사위</h3>
+            </div>
+            <div id="dice-editor" class="dice-grid"></div>
+          </div>
+
+          <div class="subsection">
+            <div class="subsection-heading">
+              <h3>자동 탐지된 보드</h3>
+            </div>
+            <div id="board-editor" class="board-list"></div>
+          </div>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="panel-heading">
+            <h2>3. 추천 결과</h2>
+          </div>
+
+          <div class="result-card result-highlight">
+            <span class="result-label">최고 기대 비료</span>
+            <strong id="best-score">-</strong>
+            <p id="best-summary">이미지를 분석하면 자동으로 결과를 계산합니다.</p>
+          </div>
+
+          <div class="result-card">
+            <span class="result-label">추천 순서</span>
+            <ol id="best-sequence" class="timeline-list"></ol>
+          </div>
+
+          <div class="result-card">
+            <span class="result-label">전체 경우의 수 비교</span>
+            <div id="all-results" class="table-wrap"></div>
+          </div>
+
+          <div id="warnings" class="warning-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="./solver.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
