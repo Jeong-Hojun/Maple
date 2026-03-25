@@ -1005,18 +1005,19 @@
       "- 독 호문스큘러 있는 발판 → 비료 값 절반",
       "",
       "=== 응답 ===",
-      "JSON만 출력하고 다른 텍스트는 쓰지 마세요.",
+      "JSON만 출력하고 다른 텍스트는 쓰지 마세요. label 필드는 출력하지 마세요(토큰 절약).",
       "tiles 배열은 반드시 index 0부터 39까지 정확히 40개여야 합니다.",
+      "출력 순서: tiles → jinTileIndex → dice → diceReasoning 순으로 출력하세요.",
       "{",
-      '  "diceReasoning": "주사위1: 점 위치 [설명] → N개. 주사위2: → N개. 주사위3: → N개",',
-      '  "jinTileIndex": <이미지에서_읽은_인덱스>,',
-      '  "dice": [<주사위1_실제눈금>, <주사위2_실제눈금>, <주사위3_실제눈금>],',
       '  "tiles": [',
-      '    {"index": 0, "fertilizer": 0, "type": "normal", "label": "START"},',
-      '    {"index": 1, "fertilizer": <이미지값>, "type": "normal", "label": "<라벨>"},',
-      "    ... index 2~39 동일하게, 반드시 총 40개 ...",
+      '    {"index":0,"fertilizer":0,"type":"normal"},',
+      '    {"index":1,"fertilizer":<이미지값>,"type":"normal"},',
+      "    ... index 2~39, 반드시 총 40개 ...",
+      '    {"index":39,"fertilizer":<이미지값>,"type":"normal"}',
       "  ],",
-      '  "notes": "<탐지_메모>"',
+      '  "jinTileIndex": <이미지에서_읽은_인덱스>,',
+      '  "dice": [<주사위1>, <주사위2>, <주사위3>],',
+      '  "diceReasoning": "주사위1→N개. 주사위2→N개. 주사위3→N개"',
       "}",
     ].join("\n");
 
@@ -1057,6 +1058,9 @@
     var candidate = responseData.candidates && responseData.candidates[0];
     if (candidate && candidate.finishReason === "SAFETY") {
       throw new Error("Gemini 응답이 안전 필터에 의해 차단되었습니다.");
+    }
+    if (candidate && candidate.finishReason === "MAX_TOKENS") {
+      state.debug.rawResponsePreview = "[⚠️ MAX_TOKENS: 모델 출력 토큰 한도 도달. 응답 잘림.]\n" + (state.debug.rawResponsePreview || "");
     }
 
     var responseText =
