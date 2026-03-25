@@ -513,12 +513,73 @@
     return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
+  // 특수 주사위 6가지 효과
+  var SPECIAL_DICE_EFFECTS = [
+    { name: "×2",       moveFn: function(d) { return 2 * d; },   mult: 1 },
+    { name: "×3",       moveFn: function(d) { return 3 * d; },   mult: 1 },
+    { name: "도착칸×2", moveFn: function(d) { return d; },       mult: 2 },
+    { name: "-5",       moveFn: function(d) { return d - 5; },   mult: 1 },
+    { name: "-10",      moveFn: function(d) { return d - 10; },  mult: 1 },
+    { name: "×(-3)",    moveFn: function(d) { return -3 * d; },  mult: 1 },
+  ];
+
+  var START_PASS_BONUS = 400;
+
+  // fromPos(0~39)에서 delta칸 이동했을 때 즉시 획득 비료
+  // 전진 시 START(index 0) 통과마다 +400
+  function gainForMove(fromPos, delta, mult, board) {
+    var size = board.length;
+    var rawPos = fromPos + delta;
+    var startCrossings = delta > 0 ? Math.floor(rawPos / size) : 0;
+    var landPos = mod(rawPos, size);
+    return startCrossings * START_PASS_BONUS + board[landPos].fertilizer * mult;
+  }
+
+  // 각 주사위에 특수 주사위를 사용했을 때의 기댓값 분석
+  function analyzeSpecialDice(config) {
+    var board = normalizeBoard(config.board || []);
+    var dice = normalizeDice(config.dice || []);
+    var pos = Number(config.currentPosition || 0);
+
+    return dice.map(function(die) {
+      var d = die.value;
+      var normalGain = gainForMove(pos, d, 1, board);
+      var normalLandPos = mod(pos + d, board.length);
+
+      var effectResults = SPECIAL_DICE_EFFECTS.map(function(effect) {
+        var delta = effect.moveFn(d);
+        var gain = gainForMove(pos, delta, effect.mult, board);
+        return {
+          name: effect.name,
+          landPos: mod(pos + delta, board.length),
+          gain: roundTwo(gain),
+        };
+      });
+
+      var specialEV = roundTwo(
+        effectResults.reduce(function(sum, e) { return sum + e.gain; }, 0) / 6
+      );
+
+      return {
+        dieLabel: die.label,
+        dieValue: d,
+        normalLandPos: normalLandPos,
+        normalGain: roundTwo(normalGain),
+        specialEV: specialEV,
+        delta: roundTwo(specialEV - normalGain),
+        effectResults: effectResults,
+      };
+    });
+  }
+
   globalScope.GardenSolver = {
     EFFECT_LABELS: EFFECT_LABELS,
     SPECIAL_LABELS: SPECIAL_LABELS,
+    SPECIAL_DICE_EFFECTS: SPECIAL_DICE_EFFECTS,
     solveScenario: solveScenario,
     normalizeBoard: normalizeBoard,
     normalizeDice: normalizeDice,
+    analyzeSpecialDice: analyzeSpecialDice,
   };
 
   if (typeof module !== "undefined" && module.exports) {

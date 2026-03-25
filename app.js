@@ -64,6 +64,7 @@
     bestScore: document.getElementById("best-score"),
     bestSummary: document.getElementById("best-summary"),
     allResults: document.getElementById("all-results"),
+    specialDiceAnalysis: document.getElementById("special-dice-analysis"),
     warnings: document.getElementById("warnings"),
     debugMeta: document.getElementById("debug-meta"),
     debugRoiCanvas: document.getElementById("debug-roi-canvas"),
@@ -278,6 +279,48 @@
       "</tbody></table>";
 
     renderWarnings((state.warnings || []).concat(result.warnings || []));
+    renderSpecialDiceAnalysis();
+  }
+
+  function renderSpecialDiceAnalysis() {
+    var el = elements.specialDiceAnalysis;
+    if (!el) return;
+    if (!state.board || !state.board.length || !state.dice || !state.dice.length) {
+      el.innerHTML = "";
+      return;
+    }
+
+    var analysis = window.GardenSolver.analyzeSpecialDice({
+      currentPosition: state.currentPosition,
+      board: state.board,
+      dice: state.dice,
+    });
+
+    // 가장 유리한 주사위 찾기
+    var bestIdx = 0;
+    analysis.forEach(function(a, i) { if (a.delta > analysis[bestIdx].delta) bestIdx = i; });
+
+    var rows = analysis.map(function(a, i) {
+      var sign = a.delta >= 0 ? "+" : "";
+      var verdict = a.delta >= 0
+        ? '<span style="color:#2a8a4a">▲ 유리 (' + sign + a.delta + ')</span>'
+        : '<span style="color:#c0392b">▼ 불리 (' + sign + a.delta + ')</span>';
+      var highlight = i === bestIdx && a.delta > 0 ? ' style="background:rgba(42,138,74,0.08)"' : '';
+      var effectTip = a.effectResults.map(function(e) {
+        return e.name + "→" + e.landPos + "번(+" + e.gain + ")";
+      }).join(" / ");
+      return "<tr" + highlight + ">" +
+        "<td><strong>" + escapeHtml(a.dieLabel) + " (" + a.dieValue + ")</strong></td>" +
+        "<td>" + a.normalLandPos + "번 → +" + a.normalGain + "</td>" +
+        "<td><strong>+" + a.specialEV + "</strong></td>" +
+        "<td>" + verdict + "</td>" +
+        "<td style='font-size:0.7rem;color:var(--muted)'>" + escapeHtml(effectTip) + "</td>" +
+        "</tr>";
+    });
+
+    el.innerHTML =
+      '<table><thead><tr><th>주사위</th><th>일반 이동</th><th>특수 기댓값</th><th>판정</th><th>효과별 착지</th></tr></thead>' +
+      '<tbody>' + rows.join("") + '</tbody></table>';
   }
 
   function solveAndRender() {
