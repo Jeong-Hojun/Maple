@@ -956,8 +956,9 @@
       "  ※ 왼쪽 열(인덱스 11~)은 인덱스 10 바로 위 칸부터 시작합니다.",
       "- 인덱스 11~19: 왼쪽 열을 아래→위, 정확히 9개 (양쪽 모서리 제외)",
       "  ※ 왼쪽 열 첫 칸(인덱스 11)은 +10칸이동(인덱스 10) 바로 위 칸입니다.",
-      "  ※ 진 캐릭터가 왼쪽 열에 있을 때, +10칸이동 코너(인덱스 10)는 왼쪽 열에 포함하지 마세요.",
-      "  ※ 왼쪽 열에서 아래에서 N번째 칸 = 인덱스 10+N (N=1이면 11, N=7이면 17).",
+      "  ※ +10칸이동 코너(인덱스 10) 자체는 왼쪽 열이 아닙니다. 코너를 1번째로 세지 마세요.",
+      "  ※ 왼쪽 열 카운팅: 코너 바로 위 첫 번째 칸=인덱스 11, 두 번째=12, ..., 일곱 번째=17.",
+      "  ⚠️ 진이 코너 위에서 k번째 칸에 있으면 jinTileIndex = 10+k. 코너는 k=0이 아니라 카운트 제외.",
       "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽, 정확히 11개",
       "  ※ 인덱스 20 = 왼쪽 상단 모서리, 인덱스 30 = 오른쪽 상단 모서리.",
       "- 인덱스 31~39: 오른쪽 열을 위→아래, 정확히 9개 (양쪽 모서리 제외)",
@@ -990,6 +991,9 @@
       "  C) 센 개수를 diceReasoning 필드에 '주사위N: 점 위치 [좌상/우상/중앙/...] → 합계 M개' 형식으로 기록한다",
       "  D) 그 숫자를 dice 배열에 넣는다",
       "",
+      "주사위 눈금별 pip 배치 참고:",
+      "  1=중앙 / 2=좌상+우하 / 3=좌상+중앙+우하 / 4=네 모서리 / 5=네 모서리+중앙 / 6=양쪽 3줄",
+      "  ⚠️ 5는 4와 혼동하기 쉽습니다. 중앙 pip이 있으면 5입니다.",
       "⚠️ 주사위 3개 모두 같은 값(예: 6,6,6)이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
       "⚠️ 예시 숫자를 절대 복사하지 마세요. 이 이미지의 '선택하기' 위 주사위 3개를 직접 보고 읽으세요.",
       "",
@@ -1191,10 +1195,39 @@
     return result;
   }
 
+  function repairTileExtras(tilesData) {
+    // 각 구간별로 extra 타일 삽입 감지 후 재인덱싱
+    // 구간: [1-9]=9개, [11-19]=9개, [20-29]=10개, [31-39]=9개 (모서리 랜드마크 제외)
+    var sorted = tilesData.slice().sort(function(a, b) { return a.index - b.index; });
+    var segments = [
+      { start: 1, end: 9 },
+      { start: 11, end: 19 },
+      { start: 20, end: 29 },
+      { start: 31, end: 39 },
+    ];
+    var repaired = [];
+    // 랜드마크는 그대로 유지
+    var landmarks = sorted.filter(function(t) { return t.index === 0 || t.index === 10 || t.index === 30; });
+    repaired = repaired.concat(landmarks);
+
+    segments.forEach(function(seg) {
+      var tiles = sorted.filter(function(t) { return t.index >= seg.start && t.index <= seg.end; });
+      var expected = seg.end - seg.start + 1;
+      if (tiles.length > expected) {
+        // extra 타일 있음 — 순서대로 expected개만 유지하고 재인덱싱
+        tiles = tiles.slice(0, expected);
+      }
+      tiles.forEach(function(t, i) { t.index = seg.start + i; });
+      repaired = repaired.concat(tiles);
+    });
+    return repaired;
+  }
+
   function buildBoardFromClaudeResult(claudeResult) {
     var totalTiles =
       BOARD_SEGMENTS.bottom + BOARD_SEGMENTS.left + BOARD_SEGMENTS.top + BOARD_SEGMENTS.right;
     var tilesData = claudeResult.tiles || [];
+    tilesData = repairTileExtras(tilesData);
     claudeResult._tileCount = tilesData.length;
     var board = [];
     var i;
