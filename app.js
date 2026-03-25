@@ -953,11 +953,24 @@
       "=== 1단계: 진 캐릭터 위치 ===",
       "검은 옷 입은 남성 캐릭터(진)가 어느 발판 위에 서 있는지 이미지에서 찾으세요.",
       "발판 인덱스 규칙 (총 40개, 이미지에서 직접 세어야 합니다):",
-      "- 인덱스 0 (START): 오른쪽 하단 모서리 (STA 텍스트 보임)",
-      "- 인덱스 1~10: 하단 행을 오른쪽→왼쪽 (10개)",
-      "- 인덱스 11~19: 왼쪽 열을 아래→위 (9개)",
-      "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽 (11개)",
-      "- 인덱스 31~39: 오른쪽 열을 위→아래 (9개)",
+      "- 인덱스 0 (START): 오른쪽 하단 모서리",
+      "- 인덱스 1~10: 하단 행을 오른쪽→왼쪽, 정확히 10개",
+      "  ※ 인덱스 10 = 왼쪽 하단 모서리. 이 모서리는 하단 행(인덱스 1~10)에 속합니다.",
+      "  ※ 왼쪽 열(인덱스 11~)은 인덱스 10 바로 위 칸부터 시작합니다.",
+      "- 인덱스 11~19: 왼쪽 열을 아래→위, 정확히 9개 (양쪽 모서리 제외)",
+      "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽, 정확히 11개",
+      "  ※ 인덱스 20 = 왼쪽 상단 모서리, 인덱스 30 = 오른쪽 상단 모서리.",
+      "- 인덱스 31~39: 오른쪽 열을 위→아래, 정확히 9개 (양쪽 모서리 제외)",
+      "  ※ 인덱스 31 = 오른쪽 상단 모서리(인덱스 30) 바로 아래 칸.",
+      "  ※ 인덱스 39 = START(인덱스 0) 바로 위 칸.",
+      "⚠️ 각 면 발판 수: 하단 10개 + 왼쪽 9개 + 상단 11개 + 오른쪽 9개 = 39개 + START 1개 = 40개.",
+      "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
+      "",
+      "고정 랜드마크 (항상 이 값이며, 검증 기준으로 사용하세요):",
+      "  - 인덱스 0  = START 발판 (우하단 모서리, 비료 0)",
+      "  - 인덱스 10 = +10칸이동 발판 (좌하단 모서리, type:\"move\", effectValue:10, fertilizer:0)",
+      "  - 인덱스 30 = ? 발판 (우상단 모서리, type:\"question\", fertilizer:233)",
+      "이 3개 고정 발판을 확인한 뒤, 나머지 발판 위치가 맞는지 검증하세요.",
       "",
       "=== 2단계: 주사위 3개 눈금 (매우 중요 — 반드시 단계별로 추론) ===",
       "이미지 중앙 패널 하단에 '캐릭터를 움직일 주사위를 골라 이동해주세요' 텍스트가 있습니다.",
@@ -1004,7 +1017,7 @@
     ].join("\n");
 
     var response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-2.0-flash" : "gemini-2.0-flash") + ":generateContent?key=" + apiKey,
+      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-3-flash-preview" : "gemini-3-flash-preview") + ":generateContent?key=" + apiKey,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1063,39 +1076,74 @@
 
     var rawJson = jsonMatch[0];
 
-    // JSON 수리: +숫자 → 숫자 (예: "fertilizer": +300 → 300)
-    rawJson = rawJson.replace(/:\s*\+(\d)/g, ": $1");
-    // JSON 수리: 후행 쉼표 제거 (, 뒤에 ] 또는 })
+    // JSON 수리 1: 배열/객체 내 +숫자 → 숫자 (예: [+6, +5], "effectValue": +10)
+    rawJson = rawJson.replace(/([:\[,]\s*)\+(\d)/g, "$1$2");
+    // JSON 수리 2: 숫자 뒤에 붙은 한글/텍스트 제거 (예: 300비료 → 300)
+    rawJson = rawJson.replace(/(\d+)[가-힣a-zA-Z]+(?=\s*[,}\]])/g, "$1");
+    // JSON 수리 3: 후행 쉼표 제거
     rawJson = rawJson.replace(/,(\s*[\]\}])/g, "$1");
 
-    // JSON 파싱 시도, 실패 시 잘린 배열 복구 후 재시도
+    // 1차 시도: 정상 파싱
     try {
       return JSON.parse(rawJson);
     } catch (firstError) {
-      // 열린 괄호 수를 세어 닫힘 괄호 추가
+      // 2차 시도: 괄호 복구 후 재파싱
       var opens = (rawJson.match(/[\[{]/g) || []).length;
       var closes = (rawJson.match(/[\]\}]/g) || []).length;
-      var repaired = rawJson.trimEnd();
-      // 마지막 불완전 객체 항목 제거 (쉼표 없이 끝나는 불완전 토큰)
-      repaired = repaired.replace(/,\s*\{[^{}]*$/, "");
+      var repaired = rawJson.trimEnd().replace(/,\s*\{[^{}]*$/, "");
       while (opens > closes) {
-        var last = repaired[repaired.length - 1];
-        if (last === "[" || last === ",") {
-          repaired += "]";
-        } else {
-          repaired += "}";
-        }
+        repaired += (repaired.slice(-1) === "[" || repaired.slice(-1) === ",") ? "]" : "}";
         closes++;
       }
       repaired = repaired.replace(/,(\s*[\]\}])/g, "$1");
       try {
-        var result = JSON.parse(repaired);
-        result._truncated = true;
-        return result;
+        var r2 = JSON.parse(repaired);
+        r2._truncated = true;
+        return r2;
       } catch (secondError) {
-        throw new Error("JSON 파싱 실패: " + firstError.message + " (수리 후도 실패: " + secondError.message + ")");
+        // 3차 시도: 정규식으로 핵심 필드 추출 (JSON 구조 무시)
+        var fallback = extractGeminiFieldsRegex(rawJson);
+        if (fallback.tiles.length > 0) {
+          fallback._regexFallback = true;
+          return fallback;
+        }
+        throw new Error("JSON 파싱 실패: " + firstError.message);
       }
     }
+  }
+
+  // JSON 파싱 실패 시 정규식으로 핵심 필드 추출
+  function extractGeminiFieldsRegex(text) {
+    var result = { tiles: [], dice: [1, 1, 1], jinTileIndex: 0, diceReasoning: "", notes: "" };
+    var m;
+
+    m = text.match(/"jinTileIndex"\s*:\s*(\d+)/);
+    if (m) result.jinTileIndex = parseInt(m[1]);
+
+    m = text.match(/"dice"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) result.dice = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+
+    m = text.match(/"diceReasoning"\s*:\s*"([^"]*)"/);
+    if (m) result.diceReasoning = m[1];
+
+    m = text.match(/"notes"\s*:\s*"([^"]*)"/);
+    if (m) result.notes = m[1];
+
+    // 각 타일 객체 추출
+    var tileRe = /\{[^{}]*?"index"\s*:\s*(\d+)[^{}]*?\}/g;
+    var tm;
+    while ((tm = tileRe.exec(text)) !== null) {
+      var body = tm[0];
+      var idx = parseInt(tm[1]);
+      if (idx < 0 || idx > 39) continue;
+      var fert = 0, type = "normal", label = "", effectValue = 0;
+      var fm = body.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
+      var tyM = body.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
+      var lm = body.match(/"label"\s*:\s*"([^"]*)"/); if (lm) label = lm[1];
+      var em = body.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
+      result.tiles.push({ index: idx, fertilizer: fert, type: type, label: label, effectValue: effectValue });
+    }
+    return result;
   }
 
   function buildBoardFromClaudeResult(claudeResult) {
