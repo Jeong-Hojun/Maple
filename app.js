@@ -965,6 +965,10 @@
       "  ※ 인덱스 39 = START(인덱스 0) 바로 위 칸.",
       "⚠️ 각 면 발판 수: 하단 10개 + 왼쪽 9개 + 상단 11개 + 오른쪽 9개 = 39개 + START 1개 = 40개.",
       "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
+      "⚠️ 발판 위에 캐릭터·아이콘·이펙트가 있어도 발판은 1개입니다. 캐릭터를 별도 발판으로 세지 마세요.",
+      "⚠️ 특수 외형(빛나는 발판, 보스 발판, 장식 이미지)도 발판 1개입니다.",
+      "⚠️ tiles 배열을 작성한 뒤 출력 전에 개수를 직접 세어 정확히 40개인지 확인하세요.",
+      "발판 수 검증표: 하단(index 1~10)=10개, 왼쪽(index 11~19)=9개, 상단(index 20~30)=11개, 오른쪽(index 31~39)=9개 → 합계 39+START=40개.",
       "",
       "고정 랜드마크 (항상 이 값이며, 검증 기준으로 사용하세요):",
       "  - 인덱스 0  = START 발판 (우하단 모서리, 비료 0)",
@@ -1150,6 +1154,7 @@
     var totalTiles =
       BOARD_SEGMENTS.bottom + BOARD_SEGMENTS.left + BOARD_SEGMENTS.top + BOARD_SEGMENTS.right;
     var tilesData = claudeResult.tiles || [];
+    claudeResult._tileCount = tilesData.length;
     var board = [];
     var i;
     var j;
@@ -1238,9 +1243,15 @@
       });
     }
 
+    var tileCountWarn = "";
+    if (claudeResult._tileCount !== undefined && claudeResult._tileCount !== 40) {
+      tileCountWarn = "⚠️ Gemini가 발판을 " + claudeResult._tileCount + "개 탐지했습니다 (정상: 40개). 보드에 잘못 삽입된 칸이 있을 수 있으니 직접 확인해 주세요.";
+    }
     state.warnings = [
       "Gemini Vision AI로 자동 탐지했습니다.",
+      tileCountWarn,
       claudeResult._truncated ? "⚠️ Gemini 응답이 잘려서 일부 발판 정보가 누락됐을 수 있습니다. 보드 칸 수를 확인해 주세요." : "",
+      claudeResult._regexFallback ? "⚠️ JSON 파싱 실패 — 정규식으로 데이터를 복구했습니다. 값을 반드시 확인해 주세요." : "",
       claudeResult.notes ? "AI 메모: " + claudeResult.notes : "",
     ].filter(Boolean);
 
