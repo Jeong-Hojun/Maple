@@ -943,38 +943,29 @@
       '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
       "자주색 UI 패널 바깥 테두리를 따라 사각형으로 이어진 발판(타일) 40개가 보입니다.",
       "",
-      "=== 1단계: 진 캐릭터 위치 ===",
-      "검은 옷 입은 남성 캐릭터(진)가 어느 발판 위에 서 있는지 이미지에서 찾으세요.",
-      "발판 인덱스 규칙 (총 40개, 이미지에서 직접 세어야 합니다):",
-      "- 인덱스 0 (START): 오른쪽 하단 모서리",
-      "- 인덱스 1~10: 하단 행을 오른쪽→왼쪽, 정확히 10개",
-      "  ※ 인덱스 10 = 왼쪽 하단 모서리. 이 모서리는 하단 행(인덱스 1~10)에 속합니다.",
-      "  ※ 왼쪽 열(인덱스 11~)은 인덱스 10 바로 위 칸부터 시작합니다.",
-      "- 인덱스 11~19: 왼쪽 열을 아래→위, 정확히 9개 (양쪽 모서리 제외)",
-      "  ※ 왼쪽 열 첫 칸(인덱스 11)은 +10칸이동(인덱스 10) 바로 위 칸입니다.",
-      "  ※ +10칸이동 코너(인덱스 10) 자체는 왼쪽 열이 아닙니다. 코너를 1번째로 세지 마세요.",
-      "  ※ 왼쪽 열 카운팅: 코너 바로 위 첫 번째 칸=인덱스 11, 두 번째=12, ..., 일곱 번째=17.",
-      "  ⚠️ 진이 코너 위에서 k번째 칸에 있으면 jinTileIndex = 10+k. 코너는 k=0이 아니라 카운트 제외.",
-      "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽, 정확히 11개",
-      "  ※ 인덱스 20 = 왼쪽 상단 모서리, 인덱스 30 = 오른쪽 상단 모서리.",
-      "- 인덱스 31~39: 오른쪽 열을 위→아래, 정확히 9개 (양쪽 모서리 제외)",
-      "  ※ 인덱스 31 = 오른쪽 상단 모서리(인덱스 30) 바로 아래 칸.",
-      "  ※ 인덱스 39 = START(인덱스 0) 바로 위 칸.",
-      "⚠️ 각 면 발판 수: 하단 10개 + 왼쪽 9개 + 상단 11개 + 오른쪽 9개 = 39개 + START 1개 = 40개.",
-      "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
-      "⚠️ 발판 위에 캐릭터·아이콘·이펙트가 있어도 발판은 1개입니다. 캐릭터를 별도 발판으로 세지 마세요.",
-      "⚠️ 특수 외형(빛나는 발판, 보스 발판, 장식 이미지)도 발판 1개입니다.",
-      "⚠️ tiles 배열을 작성한 뒤 출력 전에 개수를 직접 세어 정확히 40개인지 확인하세요.",
-      "발판 수 검증표: 하단(index 1~10)=10개, 왼쪽(index 11~19)=9개, 상단(index 20~30)=11개, 오른쪽(index 31~39)=9개 → 합계 39+START=40개.",
-      "하단 행 세는 법: START(우하단, index 0) 바로 왼쪽 발판이 index 1, 그 다음이 index 2, ..., +10칸이동(좌하단, index 10) 직전이 index 9.",
-      "  즉, START와 +10칸이동 사이(두 코너 제외)에 정확히 9개 발판(index 1~9)이 있습니다.",
-      "  ⚠️ 이 9개 구간에서 발판이 10개로 보이면 잘못 센 것입니다. 반드시 9개여야 합니다.",
+      "=== 1단계: 진 캐릭터 위치 (격자 좌표로 보고) ===",
+      "보드를 11×11 격자로 봅니다. 좌상단=행1·열1, 우하단=행11·열11.",
+      "검은 옷 입은 남성 캐릭터(진)가 있는 칸의 행(row)과 열(col)을 읽으세요.",
+      "  - 하단 행 = row 11 / 상단 행 = row 1 / 왼쪽 열 = col 1 / 오른쪽 열 = col 11",
+      "  예) 왼쪽 열에서 위에서 4번째 칸 → jinRow:4, jinCol:1",
+      "  예) 하단 행 오른쪽에서 3번째 칸 → jinRow:11, jinCol:9",
+      "jinRow와 jinCol을 출력하면 코드가 자동으로 인덱스를 계산합니다.",
       "",
-      "고정 랜드마크 (항상 이 값이며, 검증 기준으로 사용하세요):",
-      "  - 인덱스 0  = START 발판 (우하단 모서리, 비료 0)",
-      "  - 인덱스 10 = +10칸이동 발판 (좌하단 모서리, type:\"move\", effectValue:10, fertilizer:0)",
-      "  - 인덱스 30 = ? 발판 (우상단 모서리, type:\"question\", fertilizer:233)",
-      "이 3개 고정 발판을 확인한 뒤, 나머지 발판 위치가 맞는지 검증하세요.",
+      "=== 발판 인덱스 규칙 (tiles 배열용) ===",
+      "- 인덱스 0 (START): 우하단 모서리 (row11·col11)",
+      "- 인덱스 1~10: 하단 행 오른쪽→왼쪽 (row11, col10→col1)",
+      "- 인덱스 11~19: 왼쪽 열 아래→위 (col1, row10→row2), 정확히 9개",
+      "- 인덱스 20~30: 상단 행 왼쪽→오른쪽 (row1, col1→col11), 정확히 11개",
+      "- 인덱스 31~39: 오른쪽 열 위→아래 (col11, row2→row10), 정확히 9개",
+      "⚠️ 각 면 발판 수: 하단 10개+왼쪽 9개+상단 11개+오른쪽 9개+START 1개=40개.",
+      "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
+      "⚠️ 발판 위에 캐릭터·이펙트가 있어도 발판은 1개입니다.",
+      "⚠️ tiles 배열은 정확히 40개여야 합니다.",
+      "하단 행: START(index 0) 바로 왼쪽=index 1, ..., +10칸이동(좌하단)=index 10.",
+      "  START~+10칸이동 사이 9개(index 1~9). ⚠️ 10개로 보이면 잘못 센 것.",
+      "",
+      "고정 랜드마크:",
+      "  index 0=START(우하단,fertilizer:0) / index 10=+10칸이동(좌하단,type:move,effectValue:10) / index 30=?(우상단,type:question)",
       "",
       "=== 2단계: 주사위 3개 눈금 (매우 중요 — 반드시 단계별로 추론) ===",
       "이미지 중앙 패널 하단에 '캐릭터를 움직일 주사위를 골라 이동해주세요' 텍스트가 있습니다.",
@@ -1003,38 +994,35 @@
       "  - 하늘색/시안 배경 = ? 발판",
       "  - 이동 발판(+N칸이동/-N칸이동)은 위 색상과 다른 특수 외형",
       "⚠️ 숫자 텍스트가 가려진 경우 반드시 배경 색상으로 값을 판단하세요.",
-      "발판 종류 (필드명: ind=인덱스, fert=비료값, 일반 발판은 type 생략):",
-      "- 일반 발판: {\"ind\":N,\"fert\":N}",
-      "- 물음표(?) 발판: {\"ind\":N,\"fert\":233,\"type\":\"question\"}",
-      "- 이동 발판(+N칸이동): {\"ind\":N,\"fert\":0,\"type\":\"move\",\"ev\":N}",
-      "- 이동 발판(-N칸이동): {\"ind\":N,\"fert\":0,\"type\":\"move\",\"ev\":-N}",
-      "- START(인덱스0): {\"ind\":0,\"fert\":0}",
-      "⚠️ 반드시 ind/fert/ev 로 짧게 쓰세요. index/fertilizer/effectValue 쓰지 마세요.",
-      "⚠️ 일반 발판에 type 쓰지 마세요.",
+      "발판 종류 (일반 발판은 type 필드 생략):",
+      "- 일반 발판: {\"index\":N,\"fertilizer\":N}",
+      "- 물음표(?) 발판: {\"index\":N,\"fertilizer\":233,\"type\":\"question\"}",
+      "- 이동 발판(+N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":N}",
+      "- 이동 발판(-N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":-N}",
+      "⚠️ 일반 발판에 type 쓰지 마세요 (토큰 절약).",
       "⚠️ 이동 발판 위치에 별도의 비료값 칸을 추가로 삽입하지 마세요.",
-      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fert:0, ev:10입니다.",
-      "⚠️ 발판에 표시된 흰색 숫자가 최종 비료값입니다. 벌·몬스터 효과는 이미 게임이 계산해서 표시한 값입니다.",
-      "⚠️ 배율(×2, ×3, 절반 등)을 직접 계산하지 마세요. 보이는 숫자를 그대로 읽으세요.",
-      "  예) 발판에 '+800'이 흰색으로 표시되어 있으면 → fertilizer:800",
-      "  예) 벌 아이콘이 있어도 표시된 숫자가 800이면 → fertilizer:800 (이미 반영된 값)",
+      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fertilizer:0, effectValue:10입니다.",
+      "⚠️ 발판에 표시된 흰색 숫자가 최종 비료값입니다. 배율 계산하지 마세요. 보이는 숫자 그대로 읽으세요.",
       "",
       "=== 응답 ===",
-      "JSON만 출력하고 다른 텍스트는 쓰지 마세요. label 필드는 출력하지 마세요.",
+      "JSON만 출력하고 다른 텍스트는 쓰지 마세요. label 필드 출력하지 마세요.",
+      "공백 없이 compact JSON: 콜론·쉼표 뒤 공백 없음.",
       "tiles 배열은 반드시 index 0부터 39까지 정확히 40개여야 합니다.",
-      "출력 순서: tiles → jinTileIndex → dice → diceReasoning 순으로 출력하세요.",
+      "출력 순서: tiles → jinRow → jinCol → dice → diceReasoning.",
       "{",
       '  "tiles": [',
-      '    {"ind":0,"fert":0},',
-      '    {"ind":1,"fert":300},',
-      "    ... ind 2~9 일반 발판 ...",
-      '    {"ind":10,"fert":0,"type":"move","ev":10},',
-      "    ... ind 11~29 ...",
-      '    {"ind":30,"fert":233,"type":"question"},',
-      "    ... ind 31~39 ...",
-      '    {"ind":39,"fert":400}',
+      '    {"index":0,"fertilizer":0},',
+      '    {"index":1,"fertilizer":300},',
+      "    ... index 2~9 ...",
+      '    {"index":10,"fertilizer":0,"type":"move","effectValue":10},',
+      "    ... index 11~29 ...",
+      '    {"index":30,"fertilizer":233,"type":"question"},',
+      "    ... index 31~39 ...",
+      '    {"index":39,"fertilizer":400}',
       "  ],",
-      '  "jinTileIndex": 0,',
-      '  "dice": [1,2,3],',
+      '  "jinRow": 진이있는행번호,',
+      '  "jinCol": 진이있는열번호,',
+      '  "dice": [주사위1,주사위2,주사위3],',
       '  "diceReasoning": "주사위1→N개. 주사위2→N개. 주사위3→N개"',
       "}",
     ].join("\n");
@@ -1147,6 +1135,10 @@
 
     m = text.match(/"jinTileIndex"\s*:\s*(\d+)/);
     if (m) result.jinTileIndex = parseInt(m[1]);
+    m = text.match(/"jinRow"\s*:\s*(\d+)/);
+    if (m) result.jinRow = parseInt(m[1]);
+    m = text.match(/"jinCol"\s*:\s*(\d+)/);
+    if (m) result.jinCol = parseInt(m[1]);
 
     m = text.match(/"dice"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
     if (m) result.dice = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
@@ -1157,8 +1149,8 @@
     m = text.match(/"notes"\s*:\s*"([^"]*)"/);
     if (m) result.notes = m[1];
 
-    // "ind": N 또는 "index": N 위치 수집
-    var indexRe = /[{,]\s*"(?:ind|index)"\s*:\s*(\d+)/g;
+    // "index": N 위치 수집
+    var indexRe = /[{,]\s*"index"\s*:\s*(\d+)/g;
     var positions = [];
     var tm;
     while ((tm = indexRe.exec(text)) !== null) {
@@ -1175,9 +1167,9 @@
       var win = text.slice(wStart, wEnd);
 
       var fert = 0, type = "normal", effectValue = 0;
-      var fm = win.match(/"(?:fert|fertilizer)"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
+      var fm = win.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
       var tyM = win.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
-      var em = win.match(/"(?:ev|effectValue)"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
+      var em = win.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
       result.tiles.push({ index: idx, fertilizer: fert, type: type, effectValue: effectValue });
     }
 
@@ -1195,13 +1187,19 @@
     return result;
   }
 
+  // 11×11 격자 좌표(row 1=상단, col 1=좌측) → 타일 인덱스
+  function gridToTileIndex(row, col) {
+    row = Number(row); col = Number(col);
+    if (row === 11) return 11 - col;               // 하단: col11→0, col1→10
+    if (col === 1 && row >= 2 && row <= 10) return 21 - row;  // 왼쪽: row10→11, row2→19
+    if (row === 1) return 19 + col;                // 상단: col1→20, col11→30
+    if (col === 11 && row >= 2 && row <= 10) return 29 + row; // 오른쪽: row2→31, row10→39
+    return 0;
+  }
+
   function repairTileExtras(tilesData) {
     // 각 구간별로 extra 타일 삽입 감지 후 재인덱싱
     // 구간: [1-9]=9개, [11-19]=9개, [20-29]=10개, [31-39]=9개 (모서리 랜드마크 제외)
-    // ind/index 둘 다 지원: index 필드로 통일
-    tilesData.forEach(function(t) {
-      if (t.ind !== undefined && t.index === undefined) t.index = t.ind;
-    });
     var sorted = tilesData.slice().sort(function(a, b) { return a.index - b.index; });
     var segments = [
       { start: 1, end: 9 },
@@ -1238,7 +1236,7 @@
     for (i = 0; i < totalTiles; i += 1) {
       var tileData = null;
       for (j = 0; j < tilesData.length; j += 1) {
-        if (Number(tilesData[j].ind !== undefined ? tilesData[j].ind : tilesData[j].index) === i) {
+        if (Number(tilesData[j].index) === i) {
           tileData = tilesData[j];
           break;
         }
@@ -1247,7 +1245,7 @@
         tileData = { fertilizer: 300, type: "normal", label: "발판 " + i };
       }
 
-      var fertilizer = Number(tileData.fert !== undefined ? tileData.fert : (tileData.fertilizer || 0));
+      var fertilizer = Number(tileData.fertilizer || 0);
       var type = tileData.type || "normal";
       var label = tileData.label || (i === 0 ? "START" : "발판 " + i);
       var effectType = "none";
@@ -1255,7 +1253,7 @@
 
       if (type === "move") {
         effectType = "next_roll_bonus";
-        effectValue = Number(tileData.ev !== undefined ? tileData.ev : (tileData.effectValue || 0));
+        effectValue = Number(tileData.effectValue || 0);
         fertilizer = 0;
         type = "normal";
       }
@@ -1293,7 +1291,13 @@
     var claudeResult = await analyzeWithGemini(dataUrl, apiKey);
 
     state.board = buildBoardFromClaudeResult(claudeResult);
-    state.currentPosition = clamp(Number(claudeResult.jinTileIndex || 0), 0, state.board.length - 1);
+    var jinIdx = 0;
+    if (claudeResult.jinRow && claudeResult.jinCol) {
+      jinIdx = gridToTileIndex(claudeResult.jinRow, claudeResult.jinCol);
+    } else if (claudeResult.jinTileIndex) {
+      jinIdx = Number(claudeResult.jinTileIndex);
+    }
+    state.currentPosition = clamp(jinIdx, 0, state.board.length - 1);
 
     var diceValues = claudeResult.dice || [1, 1, 1];
     state.dice = diceValues.slice(0, 3).map(function buildDie(value, index) {
