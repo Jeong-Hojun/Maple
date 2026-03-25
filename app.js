@@ -217,10 +217,6 @@
     lines.push("주사위 영역: " + (state.debug.diceRectNote || "없음"));
     lines.push("보드 칸 수: " + state.debug.boardCount);
     lines.push("주사위 탐지: " + (state.debug.diceSummary || "없음"));
-    if (state.debug.rawTilesPreview) {
-      lines.push("\n--- Gemini 원본 tiles[0..12] (디버그) ---");
-      lines.push(state.debug.rawTilesPreview);
-    }
     if (state.debug.rawResponsePreview) {
       lines.push("\n--- Gemini 원본 응답 (첫 2000자) ---");
       lines.push(state.debug.rawResponsePreview);
@@ -1007,15 +1003,16 @@
       "  - 하늘색/시안 배경 = ? 발판",
       "  - 이동 발판(+N칸이동/-N칸이동)은 위 색상과 다른 특수 외형",
       "⚠️ 숫자 텍스트가 가려진 경우 반드시 배경 색상으로 값을 판단하세요.",
-      "발판 종류 (토큰 절약: 일반 발판은 type 필드 생략):",
-      "- 일반 발판: {\"index\":N,\"fertilizer\":N} — type 필드 쓰지 마세요",
-      "- 물음표(?) 발판: {\"index\":N,\"fertilizer\":233,\"type\":\"question\"}",
-      "- 이동 발판(+N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":N}",
-      "- 이동 발판(-N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":-N}",
-      "- START(인덱스0): {\"index\":0,\"fertilizer\":0}",
-      "⚠️ 일반 발판에 type 필드를 쓰지 않으면 토큰이 절약됩니다. 반드시 생략하세요.",
+      "발판 종류 (필드명: ind=인덱스, fert=비료값, 일반 발판은 type 생략):",
+      "- 일반 발판: {\"ind\":N,\"fert\":N}",
+      "- 물음표(?) 발판: {\"ind\":N,\"fert\":233,\"type\":\"question\"}",
+      "- 이동 발판(+N칸이동): {\"ind\":N,\"fert\":0,\"type\":\"move\",\"ev\":N}",
+      "- 이동 발판(-N칸이동): {\"ind\":N,\"fert\":0,\"type\":\"move\",\"ev\":-N}",
+      "- START(인덱스0): {\"ind\":0,\"fert\":0}",
+      "⚠️ 반드시 ind/fert/ev 로 짧게 쓰세요. index/fertilizer/effectValue 쓰지 마세요.",
+      "⚠️ 일반 발판에 type 쓰지 마세요.",
       "⚠️ 이동 발판 위치에 별도의 비료값 칸을 추가로 삽입하지 마세요.",
-      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fertilizer:0, effectValue:10입니다.",
+      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fert:0, ev:10입니다.",
       "⚠️ 발판에 표시된 흰색 숫자가 최종 비료값입니다. 벌·몬스터 효과는 이미 게임이 계산해서 표시한 값입니다.",
       "⚠️ 배율(×2, ×3, 절반 등)을 직접 계산하지 마세요. 보이는 숫자를 그대로 읽으세요.",
       "  예) 발판에 '+800'이 흰색으로 표시되어 있으면 → fertilizer:800",
@@ -1027,14 +1024,14 @@
       "출력 순서: tiles → jinTileIndex → dice → diceReasoning 순으로 출력하세요.",
       "{",
       '  "tiles": [',
-      '    {"index":0,"fertilizer":0},',
-      '    {"index":1,"fertilizer":300},',
-      "    ... index 2~9 일반 발판(type 생략) ...",
-      '    {"index":10,"fertilizer":0,"type":"move","effectValue":10},',
-      "    ... index 11~29 ...",
-      '    {"index":30,"fertilizer":233,"type":"question"},',
-      "    ... index 31~39 ...",
-      '    {"index":39,"fertilizer":400}',
+      '    {"ind":0,"fert":0},',
+      '    {"ind":1,"fert":300},',
+      "    ... ind 2~9 일반 발판 ...",
+      '    {"ind":10,"fert":0,"type":"move","ev":10},',
+      "    ... ind 11~29 ...",
+      '    {"ind":30,"fert":233,"type":"question"},',
+      "    ... ind 31~39 ...",
+      '    {"ind":39,"fert":400}',
       "  ],",
       '  "jinTileIndex": 0,',
       '  "dice": [1,2,3],',
@@ -1160,8 +1157,8 @@
     m = text.match(/"notes"\s*:\s*"([^"]*)"/);
     if (m) result.notes = m[1];
 
-    // "index": N 의 모든 위치 수집
-    var indexRe = /[{,]\s*"index"\s*:\s*(\d+)/g;
+    // "ind": N 또는 "index": N 위치 수집
+    var indexRe = /[{,]\s*"(?:ind|index)"\s*:\s*(\d+)/g;
     var positions = [];
     var tm;
     while ((tm = indexRe.exec(text)) !== null) {
@@ -1171,19 +1168,17 @@
       }
     }
 
-    // 각 위치에서 다음 위치까지를 window로 잘라 필드 추출
     for (var i = 0; i < positions.length; i++) {
       var idx = positions[i].idx;
       var wStart = positions[i].pos;
       var wEnd = i + 1 < positions.length ? positions[i + 1].pos : Math.min(text.length, wStart + 400);
       var win = text.slice(wStart, wEnd);
 
-      var fert = 0, type = "normal", label = "", effectValue = 0;
-      var fm = win.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
+      var fert = 0, type = "normal", effectValue = 0;
+      var fm = win.match(/"(?:fert|fertilizer)"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
       var tyM = win.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
-      var lm = win.match(/"label"\s*:\s*"([^"]*)"/); if (lm) label = lm[1];
-      var em = win.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
-      result.tiles.push({ index: idx, fertilizer: fert, type: type, label: label, effectValue: effectValue });
+      var em = win.match(/"(?:ev|effectValue)"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
+      result.tiles.push({ index: idx, fertilizer: fert, type: type, effectValue: effectValue });
     }
 
     // 중복 index 제거 (마지막 것 우선)
@@ -1203,6 +1198,10 @@
   function repairTileExtras(tilesData) {
     // 각 구간별로 extra 타일 삽입 감지 후 재인덱싱
     // 구간: [1-9]=9개, [11-19]=9개, [20-29]=10개, [31-39]=9개 (모서리 랜드마크 제외)
+    // ind/index 둘 다 지원: index 필드로 통일
+    tilesData.forEach(function(t) {
+      if (t.ind !== undefined && t.index === undefined) t.index = t.ind;
+    });
     var sorted = tilesData.slice().sort(function(a, b) { return a.index - b.index; });
     var segments = [
       { start: 1, end: 9 },
@@ -1211,7 +1210,6 @@
       { start: 31, end: 39 },
     ];
     var repaired = [];
-    // 랜드마크는 그대로 유지
     var landmarks = sorted.filter(function(t) { return t.index === 0 || t.index === 10 || t.index === 30; });
     repaired = repaired.concat(landmarks);
 
@@ -1219,7 +1217,6 @@
       var tiles = sorted.filter(function(t) { return t.index >= seg.start && t.index <= seg.end; });
       var expected = seg.end - seg.start + 1;
       if (tiles.length > expected) {
-        // extra 타일 있음 — 순서대로 expected개만 유지하고 재인덱싱
         tiles = tiles.slice(0, expected);
       }
       tiles.forEach(function(t, i) { t.index = seg.start + i; });
@@ -1241,7 +1238,7 @@
     for (i = 0; i < totalTiles; i += 1) {
       var tileData = null;
       for (j = 0; j < tilesData.length; j += 1) {
-        if (Number(tilesData[j].index) === i) {
+        if (Number(tilesData[j].ind !== undefined ? tilesData[j].ind : tilesData[j].index) === i) {
           tileData = tilesData[j];
           break;
         }
@@ -1250,7 +1247,7 @@
         tileData = { fertilizer: 300, type: "normal", label: "발판 " + i };
       }
 
-      var fertilizer = Number(tileData.fertilizer || 0);
+      var fertilizer = Number(tileData.fert !== undefined ? tileData.fert : (tileData.fertilizer || 0));
       var type = tileData.type || "normal";
       var label = tileData.label || (i === 0 ? "START" : "발판 " + i);
       var effectType = "none";
@@ -1258,7 +1255,7 @@
 
       if (type === "move") {
         effectType = "next_roll_bonus";
-        effectValue = Number(tileData.effectValue || 0);
+        effectValue = Number(tileData.ev !== undefined ? tileData.ev : (tileData.effectValue || 0));
         fertilizer = 0;
         type = "normal";
       }
