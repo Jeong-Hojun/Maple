@@ -221,6 +221,10 @@
       lines.push("\n--- Gemini 원본 tiles[0..12] (디버그) ---");
       lines.push(state.debug.rawTilesPreview);
     }
+    if (state.debug.rawResponsePreview) {
+      lines.push("\n--- Gemini 원본 응답 (첫 2000자) ---");
+      lines.push(state.debug.rawResponsePreview);
+    }
     elements.debugMeta.textContent = lines.join("\n");
 
     var target = elements.debugRoiCanvas;
@@ -1067,6 +1071,9 @@
       throw new Error("Gemini 응답 파싱 실패. 원본: " + raw);
     }
 
+    // 원본 응답을 디버그 패널에 저장 (첫 2000자)
+    state.debug.rawResponsePreview = responseText.slice(0, 2000);
+
     // 마크다운 코드블록 제거 후 JSON 추출
     var cleaned = responseText.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
     var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -1101,18 +1108,17 @@
         r2._truncated = true;
         return r2;
       } catch (secondError) {
-        // 3차 시도: 정규식으로 핵심 필드 추출 (JSON 구조 무시)
-        var fallback = extractGeminiFieldsRegex(rawJson);
-        if (fallback.tiles.length > 0) {
-          fallback._regexFallback = true;
-          return fallback;
-        }
-        throw new Error("JSON 파싱 실패: " + firstError.message);
+        // 3차 시도: 정규식으로 핵심 필드 추출 (JSON 구조 무시) — 원본 전체 텍스트 대상
+        var fallback = extractGeminiFieldsRegex(responseText);
+        fallback._regexFallback = true;
+        fallback._parseError = firstError.message;
+        state.debug.rawResponsePreview = (state.debug.rawResponsePreview || "") + "\n\n[파싱 오류: " + firstError.message + "]";
+        return fallback;
       }
     }
   }
 
-  // JSON 파싱 실패 시 정규식으로 핵심 필드 추출
+  // JSON 파싱 실패 시 정규식으로 핵심 필드 추출 (window 방식 — 중첩 {} 무관)
   function extractGeminiFieldsRegex(text) {
     var result = { tiles: [], dice: [1, 1, 1], jinTileIndex: 0, diceReasoning: "", notes: "" };
     var m;
@@ -1129,20 +1135,43 @@
     m = text.match(/"notes"\s*:\s*"([^"]*)"/);
     if (m) result.notes = m[1];
 
-    // 각 타일 객체 추출
-    var tileRe = /\{[^{}]*?"index"\s*:\s*(\d+)[^{}]*?\}/g;
+    // "index": N 의 모든 위치 수집
+    var indexRe = /[{,]\s*"index"\s*:\s*(\d+)/g;
+    var positions = [];
     var tm;
-    while ((tm = tileRe.exec(text)) !== null) {
-      var body = tm[0];
+    while ((tm = indexRe.exec(text)) !== null) {
       var idx = parseInt(tm[1]);
-      if (idx < 0 || idx > 39) continue;
+      if (idx >= 0 && idx <= 39) {
+        positions.push({ idx: idx, pos: tm.index });
+      }
+    }
+
+    // 각 위치에서 다음 위치까지를 window로 잘라 필드 추출
+    for (var i = 0; i < positions.length; i++) {
+      var idx = positions[i].idx;
+      var wStart = positions[i].pos;
+      var wEnd = i + 1 < positions.length ? positions[i + 1].pos : Math.min(text.length, wStart + 400);
+      var win = text.slice(wStart, wEnd);
+
       var fert = 0, type = "normal", label = "", effectValue = 0;
-      var fm = body.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
-      var tyM = body.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
-      var lm = body.match(/"label"\s*:\s*"([^"]*)"/); if (lm) label = lm[1];
-      var em = body.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
+      var fm = win.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
+      var tyM = win.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
+      var lm = win.match(/"label"\s*:\s*"([^"]*)"/); if (lm) label = lm[1];
+      var em = win.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
       result.tiles.push({ index: idx, fertilizer: fert, type: type, label: label, effectValue: effectValue });
     }
+
+    // 중복 index 제거 (마지막 것 우선)
+    var seen = {};
+    var deduped = [];
+    for (var j = result.tiles.length - 1; j >= 0; j--) {
+      if (!seen[result.tiles[j].index]) {
+        seen[result.tiles[j].index] = true;
+        deduped.unshift(result.tiles[j]);
+      }
+    }
+    result.tiles = deduped;
+
     return result;
   }
 
