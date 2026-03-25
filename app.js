@@ -63,7 +63,6 @@
     solveButton: document.getElementById("solve-button"),
     bestScore: document.getElementById("best-score"),
     bestSummary: document.getElementById("best-summary"),
-    bestSequence: document.getElementById("best-sequence"),
     allResults: document.getElementById("all-results"),
     warnings: document.getElementById("warnings"),
     debugMeta: document.getElementById("debug-meta"),
@@ -218,6 +217,10 @@
     lines.push("주사위 영역: " + (state.debug.diceRectNote || "없음"));
     lines.push("보드 칸 수: " + state.debug.boardCount);
     lines.push("주사위 탐지: " + (state.debug.diceSummary || "없음"));
+    if (state.debug.rawTilesPreview) {
+      lines.push("\n--- Gemini 원본 tiles[0..12] (디버그) ---");
+      lines.push(state.debug.rawTilesPreview);
+    }
     elements.debugMeta.textContent = lines.join("\n");
 
     var target = elements.debugRoiCanvas;
@@ -260,22 +263,12 @@
     elements.bestScore.textContent = result.expectedFertilizer.toFixed(2);
     if (!result.bestSequence.length) {
       elements.bestSummary.textContent = "탐지된 보드가 없어서 결과를 계산하지 못했습니다.";
-      elements.bestSequence.innerHTML = "";
       elements.allResults.innerHTML = "";
       renderWarnings(result.warnings);
       return;
     }
 
     elements.bestSummary.textContent = "이벤트 UI 영역을 먼저 찾은 뒤 상대좌표로 계산한 결과입니다. 값이 다르면 바로 수정해 주세요.";
-    elements.bestSequence.innerHTML = result.bestSequence
-      .map(function mapStep(step, index) {
-        var line = step.dieLabel + " -> " + step.optionLabel + " -> " + step.tileLabel + " (+" + round(step.immediateGain) + ")";
-        if (step.branchMeta) {
-          line += " / 좌 기대값 " + round(step.branchMeta.leftExpected) + ", 우 기대값 " + round(step.branchMeta.rightExpected);
-        }
-        return "<li><strong>" + (index + 1) + "턴</strong> " + escapeHtml(line) + "</li>";
-      })
-      .join("");
 
     elements.allResults.innerHTML =
       '<table><thead><tr><th>순위</th><th>주사위 순서</th><th>기대 비료</th><th>주요 경로</th></tr></thead><tbody>' +
@@ -969,6 +962,9 @@
       "⚠️ 특수 외형(빛나는 발판, 보스 발판, 장식 이미지)도 발판 1개입니다.",
       "⚠️ tiles 배열을 작성한 뒤 출력 전에 개수를 직접 세어 정확히 40개인지 확인하세요.",
       "발판 수 검증표: 하단(index 1~10)=10개, 왼쪽(index 11~19)=9개, 상단(index 20~30)=11개, 오른쪽(index 31~39)=9개 → 합계 39+START=40개.",
+      "하단 행 세는 법: START(우하단, index 0) 바로 왼쪽 발판이 index 1, 그 다음이 index 2, ..., +10칸이동(좌하단, index 10) 직전이 index 9.",
+      "  즉, START와 +10칸이동 사이(두 코너 제외)에 정확히 9개 발판(index 1~9)이 있습니다.",
+      "  ⚠️ 이 9개 구간에서 발판이 10개로 보이면 잘못 센 것입니다. 반드시 9개여야 합니다.",
       "",
       "고정 랜드마크 (항상 이 값이며, 검증 기준으로 사용하세요):",
       "  - 인덱스 0  = START 발판 (우하단 모서리, 비료 0)",
@@ -1265,6 +1261,10 @@
     state.debug.eventRectNote = "Gemini Vision API 사용";
     state.debug.boardRectNote = "Gemini AI 탐지 (픽셀 좌표 없음)";
     state.debug.diceRectNote = claudeResult.diceReasoning || "추론 없음";
+    var rawTiles = claudeResult.tiles || [];
+    state.debug.rawTilesPreview = rawTiles.slice(0, 13).map(function(t) {
+      return "[" + t.index + "] " + t.type + " fert=" + t.fertilizer + (t.effectValue ? " ev=" + t.effectValue : "") + (t.label ? " \"" + t.label + "\"" : "");
+    }).join("\n");
     state.debug.boardCount = state.board.length;
     state.debug.diceSummary = state.dice
       .map(function mapDie(d) { return d.label + ":" + d.value; })
