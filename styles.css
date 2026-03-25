@@ -507,3 +507,142 @@ th {
     border-radius: 26px;
   }
 }
+
+/* ─── Claude API 키 패널 ──────────────────────────────────────────── */
+.api-key-panel {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(44, 122, 89, 0.06), rgba(223, 242, 232, 0.45));
+  border: 1px solid rgba(44, 122, 89, 0.18);
+}
+
+.api-key-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+  margin-bottom: 6px;
+}
+
+.api-key-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.api-key-input-row input[type="password"] {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid rgba(44, 122, 89, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--text);
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 160ms;
+}
+
+.api-key-input-row input[type="password"]:focus {
+  border-color: var(--accent);
+}
+
+.api-status-badge {
+  font-size: 0.78rem;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.api-status-ok {
+  background: rgba(44, 122, 89, 0.14);
+  color: var(--accent-strong);
+}
+
+.muted.small {
+  font-size: 0.82rem;
+  margin: 8px 0 0;
+}
+
+/* ─── 보드 그리드 레이아웃 ───────────────────────────────────────────── */
+.board-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(11, 1fr);
+  grid-template-rows: repeat(11, 40px);
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.bgcell {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.bgi {
+  position: absolute;
+  top: 1px;
+  left: 2px;
+  font-size: 0.52rem;
+  color: var(--muted);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.bgv {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+}
+
+.bgv-inp {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.68rem;
+  padding: 0 1px;
+  min-height: auto;
+  border-radius: 0;
+  color: var(--text);
+}
+
+.bgv-inp:focus {
+  outline: none;
+  background: rgba(44, 122, 89, 0.1);
+}
+
+.bgcell-cur {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.bgcell-q {
+  background: rgba(255, 195, 40, 0.2);
+}
+
+.bgv-q {
+  color: #7a5f00;
+  font-size: 1rem;
+}
+
+.bgcell-mv {
+  background: rgba(50, 100, 210, 0.14);
+}
+
+.bgv-mv {
+  color: #2a55a0;
+  font-size: 0.62rem;
+}
+
+.bgcell-start {
+  background: rgba(44, 122, 89, 0.18);
+  border-color: var(--accent);
+}

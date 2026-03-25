@@ -1,7 +1,7 @@
 (function bootstrapApp() {
   "use strict";
 
-  var BOARD_SEGMENTS = { bottom: 11, left: 7, top: 11, right: 7 };
+  var BOARD_SEGMENTS = { bottom: 11, left: 9, top: 11, right: 9 }; // 총 40칸
 
   var EFFECT_OPTIONS = [
     { value: "none", label: "효과 없음" },
@@ -78,6 +78,10 @@
     manualDiceH: document.getElementById("manual-dice-h"),
     applyBoardRoi: document.getElementById("apply-board-roi"),
     applyDiceRoi: document.getElementById("apply-dice-roi"),
+    claudeApiKey: document.getElementById("claude-api-key"),
+    claudeApiSave: document.getElementById("claude-api-save"),
+    claudeApiStatus: document.getElementById("claude-api-status"),
+    geminiModel: document.getElementById("gemini-model"),
   };
 
   function createFallbackBoard() {
@@ -161,26 +165,42 @@
   }
 
   function renderBoardEditor() {
-    elements.boardEditor.innerHTML = state.board
-      .map(function mapTile(tile, index) {
-        var isQuestion = tile.type === "question";
-        return (
-          '<article class="tile-card">' +
-          "<h4>발판 " + index + "</h4>" +
-          '<div class="tile-card-grid">' +
-          '<label>라벨<input type="text" data-tile-index="' + index + '" data-field="label" value="' + escapeHtml(tile.label) + '" /></label>' +
-          '<label>발판 타입<select data-tile-index="' + index + '" data-field="type">' + buildOptions(TILE_TYPES, tile.type) + "</select></label>" +
-          '<label>비료 값<input type="number" min="-999" max="9999" data-tile-index="' + index + '" data-field="fertilizer" value="' + tile.fertilizer + '" /></label>' +
-          '<label>효과<select data-tile-index="' + index + '" data-field="effectType">' + buildOptions(EFFECT_OPTIONS, tile.effectType) + "</select></label>" +
-          '<label>효과 수치<input type="number" min="-20" max="20" data-tile-index="' + index + '" data-field="effectValue" value="' + tile.effectValue + '" /></label>' +
-          '<label>왼쪽 대상<input type="number" min="0" max="' + (state.board.length - 1) + '" data-tile-index="' + index + '" data-field="leftTarget" value="' + tile.leftTarget + '" ' + (isQuestion ? "" : "disabled") + " /></label>" +
-          '<label>오른쪽 대상<input type="number" min="0" max="' + (state.board.length - 1) + '" data-tile-index="' + index + '" data-field="rightTarget" value="' + tile.rightTarget + '" ' + (isQuestion ? "" : "disabled") + " /></label>" +
-          '<label>검토 메모<input type="text" disabled value="' + escapeHtml(tile.detectedNote || "자동 탐지 결과") + '" /></label>' +
-          "</div>" +
-          "</article>"
-        );
-      })
-      .join("");
+    // 타일 인덱스 → 11×11 그리드 좌표 (row, col)
+    function gridPos(idx) {
+      if (idx === 0) return [11, 11];                         // START 우하단
+      if (idx >= 1  && idx <= 10) return [11, 11 - idx];     // 하단 오른쪽→왼쪽
+      if (idx >= 11 && idx <= 19) return [11 - (idx - 10), 1]; // 왼쪽 아래→위
+      if (idx >= 20 && idx <= 30) return [1,  idx - 19];     // 상단 왼쪽→오른쪽
+      if (idx >= 31 && idx <= 39) return [idx - 29, 11];     // 오른쪽 위→아래
+      return null;
+    }
+
+    var cells = state.board.map(function (tile, index) {
+      var pos = gridPos(index);
+      if (!pos) return "";
+      var isCur = index === state.currentPosition;
+      var cls = "bgcell" +
+        (isCur ? " bgcell-cur" : "") +
+        (tile.type === "question" ? " bgcell-q" :
+         tile.effectType === "next_roll_bonus" ? " bgcell-mv" :
+         index === 0 ? " bgcell-start" : "");
+      var idxLabel = index === 0 ? "S" : String(index);
+      var inner;
+      if (index === 0) {
+        inner = '<span class="bgi">S</span><span class="bgv">ST</span>';
+      } else if (tile.type === "question") {
+        inner = '<span class="bgi">' + idxLabel + '</span><span class="bgv bgv-q">?</span>';
+      } else if (tile.effectType === "next_roll_bonus") {
+        inner = '<span class="bgi">' + idxLabel + '</span>' +
+          '<span class="bgv bgv-mv">' + (tile.effectValue >= 0 ? "+" : "") + tile.effectValue + "칸</span>";
+      } else {
+        inner = '<span class="bgi">' + idxLabel + '</span>' +
+          '<input class="bgv-inp" type="number" data-tile-index="' + index + '" data-field="fertilizer" value="' + tile.fertilizer + '" />';
+      }
+      return '<div class="' + cls + '" style="grid-row:' + pos[0] + ';grid-column:' + pos[1] + '">' + inner + "</div>";
+    }).join("");
+
+    elements.boardEditor.innerHTML = '<div class="board-grid-layout">' + cells + "</div>";
   }
 
   function renderWarnings(warnings) {
@@ -260,7 +280,7 @@
     elements.allResults.innerHTML =
       '<table><thead><tr><th>순위</th><th>주사위 순서</th><th>기대 비료</th><th>주요 경로</th></tr></thead><tbody>' +
       result.allResults.slice(0, 12).map(function mapResult(entry, index) {
-        return "<tr><td>" + (index + 1) + "</td><td><span class=\"pill\">" + escapeHtml(entry.order.join(" -> ")) + "</span></td><td>" + entry.expectedFertilizer.toFixed(2) + "</td><td>" + escapeHtml(entry.steps.map(function mapPath(step) { return step.dieLabel + " -> " + step.tileLabel; }).join(" | ")) + "</td></tr>";
+        return "<tr><td>" + (index + 1) + "</td><td><span class=\"pill\">" + escapeHtml(entry.order.join(" -> ")) + "</span></td><td>" + entry.expectedFertilizer.toFixed(2) + "</td><td>" + escapeHtml(entry.steps.map(function mapPath(step) { return step.dieLabel + "(+" + round(step.immediateGain) + ")"; }).join(" > ")) + "</td></tr>";
       }).join("") +
       "</tbody></table>";
 
@@ -802,7 +822,7 @@
         id: "tile-" + index,
         label: index === 0 ? "START" : guess.label + " " + index,
         type: guess.type,
-        fertilizer: reward > 0 ? reward : guess.type === "question" ? 0 : 300,
+        fertilizer: reward > 0 ? reward : guess.type === "question" ? QUESTION_TILE_EV : 300,
         effectType: guess.effectType,
         effectValue: guess.effectValue,
         leftTarget: index === 0 ? regions.length - 1 : index - 1,
@@ -913,6 +933,296 @@
       context.fillText("D" + (index + 1), region.x * scaleX + 4, region.y * scaleY + 11);
     });
   }
+
+  // ─── Claude Vision API 탐지 ───────────────────────────────────────────────
+
+  var QUESTION_TILE_EV = 232.5; // 좌(200) vs 우(50*5%+100*45%+300*45%+1000*5%=232.5) → 우 기댓값 채택
+
+  async function analyzeWithGemini(dataUrl, apiKey) {
+    var commaIdx = dataUrl.indexOf(",");
+    var base64Data = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+    var mimeMatch = dataUrl.match(/data:([^;]+);/);
+    var mediaType = mimeMatch ? mimeMatch[1] : "image/png";
+
+    var prompt = [
+      '⚠️ 반드시 지금 이미지를 직접 보고 읽으세요. 아래 예시값은 형식 안내용 플레이스홀더이며 절대 그대로 사용하지 마세요.',
+      "",
+      '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
+      "자주색 UI 패널 바깥 테두리를 따라 사각형으로 이어진 발판(타일) 40개가 보입니다.",
+      "",
+      "=== 1단계: 진 캐릭터 위치 ===",
+      "검은 옷 입은 남성 캐릭터(진)가 어느 발판 위에 서 있는지 이미지에서 찾으세요.",
+      "발판 인덱스 규칙 (총 40개, 이미지에서 직접 세어야 합니다):",
+      "- 인덱스 0 (START): 오른쪽 하단 모서리 (STA 텍스트 보임)",
+      "- 인덱스 1~10: 하단 행을 오른쪽→왼쪽 (10개)",
+      "- 인덱스 11~19: 왼쪽 열을 아래→위 (9개)",
+      "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽 (11개)",
+      "- 인덱스 31~39: 오른쪽 열을 위→아래 (9개)",
+      "",
+      "=== 2단계: 주사위 3개 눈금 (매우 중요 — 반드시 단계별로 추론) ===",
+      "이미지 중앙 패널 하단에 '캐릭터를 움직일 주사위를 골라 이동해주세요' 텍스트가 있습니다.",
+      "그 바로 아래에 정사각형 주사위 3개가 가로로 나란히 있고, 각 주사위 바로 아래 '선택하기' 버튼이 있습니다.",
+      "주사위는 어두운/컬러 배경에 흰색 점(pip)이 찍혀 있습니다.",
+      "",
+      "각 주사위마다 아래 절차를 반드시 따르세요:",
+      "  A) '선택하기' 버튼을 기준으로 바로 위에 있는 정사각형을 찾는다",
+      "  B) 그 정사각형 안의 흰 점을 하나씩 천천히 센다",
+      "  C) 센 개수를 diceReasoning 필드에 '주사위N: 점 위치 [좌상/우상/중앙/...] → 합계 M개' 형식으로 기록한다",
+      "  D) 그 숫자를 dice 배열에 넣는다",
+      "",
+      "⚠️ 주사위 3개 모두 같은 값(예: 6,6,6)이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
+      "⚠️ 예시 숫자를 절대 복사하지 마세요. 이 이미지의 '선택하기' 위 주사위 3개를 직접 보고 읽으세요.",
+      "",
+      "=== 3단계: 40개 발판 비료 값 ===",
+      "각 발판에 표시된 '+숫자' 값을 이미지에서 직접 읽으세요.",
+      "발판 종류:",
+      "- 일반 발판: '+N' 표시 → type:\"normal\", fertilizer:N",
+      "- 물음표(?) 발판 → type:\"question\", fertilizer:233",
+      "- 이동 발판(+N칸이동) → type:\"move\", effectValue:N, fertilizer:0  ※ 이 칸 1개만 tiles 배열에 추가",
+      "- 이동 발판(-N칸이동) → type:\"move\", effectValue:-N, fertilizer:0  ※ 이 칸 1개만 tiles 배열에 추가",
+      "⚠️ 이동 발판 위치에 별도의 비료값 칸(예: +300)을 추가로 삽입하지 마세요. 이동 발판 1개는 tiles 배열 항목 1개입니다.",
+      "⚠️ '+10칸이동' 텍스트에서 숫자 10을 비료값으로 착각하지 마세요. 반드시 fertilizer:0, effectValue:10입니다.",
+      "- START(인덱스0) → type:\"normal\", fertilizer:0",
+      "- 황금 벌 있는 발판 → 비료 값 2배",
+      "- 신비한 벌 있는 발판 → 비료 값 3배",
+      "- 독 호문스큘러 있는 발판 → 비료 값 절반",
+      "",
+      "=== 응답 ===",
+      "JSON만 출력하고 다른 텍스트는 쓰지 마세요.",
+      "tiles 배열은 반드시 index 0부터 39까지 정확히 40개여야 합니다.",
+      "{",
+      '  "diceReasoning": "주사위1: 점 위치 [설명] → N개. 주사위2: → N개. 주사위3: → N개",',
+      '  "jinTileIndex": <이미지에서_읽은_인덱스>,',
+      '  "dice": [<주사위1_실제눈금>, <주사위2_실제눈금>, <주사위3_실제눈금>],',
+      '  "tiles": [',
+      '    {"index": 0, "fertilizer": 0, "type": "normal", "label": "START"},',
+      '    {"index": 1, "fertilizer": <이미지값>, "type": "normal", "label": "<라벨>"},',
+      "    ... index 2~39 동일하게, 반드시 총 40개 ...",
+      "  ],",
+      '  "notes": "<탐지_메모>"',
+      "}",
+    ].join("\n");
+
+    var response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-2.0-flash" : "gemini-2.0-flash") + ":generateContent?key=" + apiKey,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { inline_data: { mime_type: mediaType, data: base64Data } },
+                { text: prompt },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0, maxOutputTokens: 16384 },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      var errText = await response.text();
+      if (response.status === 429) {
+        throw new Error("Gemini 요청 한도 초과(429) — 1분 후 다시 시도하거나, Google AI Studio에서 사용량을 확인하세요.");
+      }
+      throw new Error("Gemini API 오류 " + response.status + ": " + errText.slice(0, 200));
+    }
+
+    var responseData = await response.json();
+
+    // 안전 필터 차단 여부 확인
+    if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
+      throw new Error("Gemini 안전 필터 차단: " + responseData.promptFeedback.blockReason);
+    }
+
+    var candidate = responseData.candidates && responseData.candidates[0];
+    if (candidate && candidate.finishReason === "SAFETY") {
+      throw new Error("Gemini 응답이 안전 필터에 의해 차단되었습니다.");
+    }
+
+    var responseText =
+      candidate &&
+      candidate.content &&
+      candidate.content.parts &&
+      candidate.content.parts[0] &&
+      candidate.content.parts[0].text;
+
+    if (!responseText) {
+      var raw = JSON.stringify(responseData).slice(0, 400);
+      throw new Error("Gemini 응답 파싱 실패. 원본: " + raw);
+    }
+
+    // 마크다운 코드블록 제거 후 JSON 추출
+    var cleaned = responseText.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
+    var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Gemini 응답에서 JSON을 찾을 수 없습니다: " + responseText.slice(0, 300));
+    }
+
+    var rawJson = jsonMatch[0];
+
+    // JSON 수리: +숫자 → 숫자 (예: "fertilizer": +300 → 300)
+    rawJson = rawJson.replace(/:\s*\+(\d)/g, ": $1");
+    // JSON 수리: 후행 쉼표 제거 (, 뒤에 ] 또는 })
+    rawJson = rawJson.replace(/,(\s*[\]\}])/g, "$1");
+
+    // JSON 파싱 시도, 실패 시 잘린 배열 복구 후 재시도
+    try {
+      return JSON.parse(rawJson);
+    } catch (firstError) {
+      // 열린 괄호 수를 세어 닫힘 괄호 추가
+      var opens = (rawJson.match(/[\[{]/g) || []).length;
+      var closes = (rawJson.match(/[\]\}]/g) || []).length;
+      var repaired = rawJson.trimEnd();
+      // 마지막 불완전 객체 항목 제거 (쉼표 없이 끝나는 불완전 토큰)
+      repaired = repaired.replace(/,\s*\{[^{}]*$/, "");
+      while (opens > closes) {
+        var last = repaired[repaired.length - 1];
+        if (last === "[" || last === ",") {
+          repaired += "]";
+        } else {
+          repaired += "}";
+        }
+        closes++;
+      }
+      repaired = repaired.replace(/,(\s*[\]\}])/g, "$1");
+      try {
+        var result = JSON.parse(repaired);
+        result._truncated = true;
+        return result;
+      } catch (secondError) {
+        throw new Error("JSON 파싱 실패: " + firstError.message + " (수리 후도 실패: " + secondError.message + ")");
+      }
+    }
+  }
+
+  function buildBoardFromClaudeResult(claudeResult) {
+    var totalTiles =
+      BOARD_SEGMENTS.bottom + BOARD_SEGMENTS.left + BOARD_SEGMENTS.top + BOARD_SEGMENTS.right;
+    var tilesData = claudeResult.tiles || [];
+    var board = [];
+    var i;
+    var j;
+
+    for (i = 0; i < totalTiles; i += 1) {
+      var tileData = null;
+      for (j = 0; j < tilesData.length; j += 1) {
+        if (Number(tilesData[j].index) === i) {
+          tileData = tilesData[j];
+          break;
+        }
+      }
+      if (!tileData) {
+        tileData = { fertilizer: 300, type: "normal", label: "발판 " + i };
+      }
+
+      var fertilizer = Number(tileData.fertilizer || 0);
+      var type = tileData.type || "normal";
+      var label = tileData.label || (i === 0 ? "START" : "발판 " + i);
+      var effectType = "none";
+      var effectValue = 0;
+
+      if (type === "move") {
+        effectType = "next_roll_bonus";
+        effectValue = Number(tileData.effectValue || 0);
+        fertilizer = 0;
+        type = "normal";
+      }
+
+      if (type === "question") {
+        fertilizer = QUESTION_TILE_EV;
+      }
+
+      board.push({
+        id: "tile-" + i,
+        label: label,
+        type: type === "question" ? "question" : "normal",
+        fertilizer: fertilizer,
+        effectType: effectType,
+        effectValue: effectValue,
+        leftTarget: i === 0 ? totalTiles - 1 : i - 1,
+        rightTarget: i === totalTiles - 1 ? 0 : i + 1,
+        detectedNote: "Claude Vision AI 탐지",
+      });
+    }
+
+    return board;
+  }
+
+  async function detectWithGemini(image, dataUrl, apiKey) {
+    setDetectionStatus("Gemini AI로 보드·주사위·진 위치를 분석 중입니다...", "loading");
+
+    var sourceCanvas = createCanvas(
+      image.naturalWidth || image.width,
+      image.naturalHeight || image.height
+    );
+    sourceCanvas.getContext("2d").drawImage(image, 0, 0);
+    state.sourceCanvas = sourceCanvas;
+
+    var claudeResult = await analyzeWithGemini(dataUrl, apiKey);
+
+    state.board = buildBoardFromClaudeResult(claudeResult);
+    state.currentPosition = clamp(Number(claudeResult.jinTileIndex || 0), 0, state.board.length - 1);
+
+    var diceValues = claudeResult.dice || [1, 1, 1];
+    state.dice = diceValues.slice(0, 3).map(function buildDie(value, index) {
+      return {
+        id: "die-" + index,
+        label: "주사위 " + String.fromCharCode(65 + index),
+        value: clamp(Number(value) || 1, 1, 6),
+        specialType: "none",
+        specialValue: 0,
+        detectedNote: "Claude AI: 눈금 " + value,
+      };
+    });
+
+    while (state.dice.length < 3) {
+      var idx = state.dice.length;
+      state.dice.push({
+        id: "die-" + idx,
+        label: "주사위 " + String.fromCharCode(65 + idx),
+        value: 1,
+        specialType: "none",
+        specialValue: 0,
+        detectedNote: "Claude AI 탐지 누락 - 기본값",
+      });
+    }
+
+    state.warnings = [
+      "Gemini Vision AI로 자동 탐지했습니다.",
+      claudeResult._truncated ? "⚠️ Gemini 응답이 잘려서 일부 발판 정보가 누락됐을 수 있습니다. 보드 칸 수를 확인해 주세요." : "",
+      claudeResult.notes ? "AI 메모: " + claudeResult.notes : "",
+    ].filter(Boolean);
+
+    // AI 모드에서는 픽셀 기반 오버레이를 표시하지 않음 (위치가 부정확하므로)
+    state.detectionMeta.eventRect = null;
+    state.detectionMeta.boardRect = null;
+    state.detectionMeta.diceRect = null;
+    state.detectionMeta.boardRegions = [];
+    state.detectionMeta.diceRegions = [];
+
+    state.debug.eventRectNote = "Gemini Vision API 사용";
+    state.debug.boardRectNote = "Gemini AI 탐지 (픽셀 좌표 없음)";
+    state.debug.diceRectNote = claudeResult.diceReasoning || "추론 없음";
+    state.debug.boardCount = state.board.length;
+    state.debug.diceSummary = state.dice
+      .map(function mapDie(d) { return d.label + ":" + d.value; })
+      .join(", ");
+    state.debug.roiCanvas = null;
+
+    renderAll();
+    drawOverlay();
+    solveAndRender();
+    setDetectionStatus(
+      "Claude AI 탐지 완료 — 진 위치: " + state.currentPosition +
+      "번 발판, 주사위: " + diceValues.slice(0, 3).join(" / "),
+      "success"
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   async function detectScenario(image) {
     var sourceCanvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
@@ -1088,11 +1398,18 @@
       elements.previewImage.src = loaded.dataUrl;
       elements.previewImage.classList.add("visible");
       elements.previewEmpty.style.display = "none";
-      await detectScenario(loaded.image);
+
+      var apiKey = elements.claudeApiKey && elements.claudeApiKey.value.trim();
+      if (apiKey) {
+        await detectWithGemini(loaded.image, loaded.dataUrl, apiKey);
+      } else {
+        await detectScenario(loaded.image);
+      }
     } catch (error) {
-      state.warnings = ["이미지 분석에 실패했습니다. 다른 캡처로 다시 시도해 주세요."];
+      var errorMsg = error && error.message ? error.message : "알 수 없는 오류";
+      state.warnings = ["오류 상세: " + errorMsg];
       renderWarnings(state.warnings);
-      setDetectionStatus("이미지 분석에 실패했습니다.", "error");
+      setDetectionStatus("이미지 분석 실패 — " + errorMsg, "error");
     }
   }
 
@@ -1166,6 +1483,37 @@
   elements.boardEditor.addEventListener("input", syncEditorState);
   elements.boardEditor.addEventListener("change", syncEditorState);
   window.addEventListener("resize", drawOverlay);
+
+  // API 키 localStorage 복원
+  (function initApiKey() {
+    var saved = localStorage.getItem("gardenHelperApiKey");
+    if (saved && elements.claudeApiKey) {
+      elements.claudeApiKey.value = saved;
+      if (elements.claudeApiStatus) {
+        elements.claudeApiStatus.textContent = "키 저장됨";
+        elements.claudeApiStatus.className = "api-status-badge api-status-ok";
+      }
+    }
+  })();
+
+  if (elements.claudeApiSave) {
+    elements.claudeApiSave.addEventListener("click", function onSaveKey() {
+      var key = elements.claudeApiKey ? elements.claudeApiKey.value.trim() : "";
+      if (key) {
+        localStorage.setItem("gardenHelperApiKey", key);
+        if (elements.claudeApiStatus) {
+          elements.claudeApiStatus.textContent = "저장 완료";
+          elements.claudeApiStatus.className = "api-status-badge api-status-ok";
+        }
+      } else {
+        localStorage.removeItem("gardenHelperApiKey");
+        if (elements.claudeApiStatus) {
+          elements.claudeApiStatus.textContent = "";
+          elements.claudeApiStatus.className = "api-status-badge";
+        }
+      }
+    });
+  }
 
   attachDropAndPasteHandlers();
   renderPositionOptions();

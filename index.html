@@ -65,6 +65,32 @@
 
           <div class="subsection">
             <div class="subsection-heading">
+              <h3>Gemini AI 자동 탐지</h3>
+              <span id="claude-api-status" class="api-status-badge"></span>
+            </div>
+            <div class="api-key-panel">
+              <label class="api-key-label">
+                Gemini API Key
+                <div class="api-key-input-row">
+                  <input id="claude-api-key" type="password" placeholder="AIza..." autocomplete="off" spellcheck="false" />
+                  <button id="claude-api-save" class="ghost-button" type="button">저장</button>
+                </div>
+              </label>
+              <label class="api-key-label" style="margin-top:10px;">
+                모델
+                <input id="gemini-model" type="text" value="gemini-2.5-flash" placeholder="gemini-2.5-flash" style="margin-top:4px;padding:8px 12px;border:1px solid rgba(44,122,89,0.3);border-radius:12px;width:100%;background:rgba(255,255,255,0.75);" />
+              </label>
+              <p class="muted small">
+                API 키를 입력하면 이미지 업로드 시 Gemini AI가 보드·주사위·진 위치를 자동으로 분석합니다.
+                키는 이 브라우저의 localStorage에만 저장되며, Google Gemini API 호출에만 사용됩니다.
+                (<a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>에서 무료 발급)
+                · 404 오류 시 모델명을 <code>gemini-2.0-flash-exp</code> 또는 <code>gemini-2.5-flash-preview-04-17</code>로 변경해 보세요.
+              </p>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <div class="subsection-heading">
               <h3>디버그 오버레이</h3>
             </div>
             <div class="debug-panel">
