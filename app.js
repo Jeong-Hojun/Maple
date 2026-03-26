@@ -295,7 +295,7 @@
     var baseEV = scenarios[0].expectedGain;
 
     var rows = scenarios.map(function(s) {
-      var diff = roundTwo(s.expectedGain - baseEV);
+      var diff = round(s.expectedGain - baseEV);
       var diffStr = diff === 0 ? "-" : (diff > 0 ? '<span style="color:#2a8a4a">+' + diff + '</span>' : '<span style="color:#c0392b">' + diff + '</span>');
       var action = "";
       if (s.firstStep) {
