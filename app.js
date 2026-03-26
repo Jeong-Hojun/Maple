@@ -151,10 +151,8 @@
         return (
           '<article class="dice-card">' +
           "<h4>" + escapeHtml(die.label) + "</h4>" +
-          '<label>탐지된 눈금<input type="number" min="1" max="6" data-die-index="' + index + '" data-field="value" value="' + die.value + '" /></label>' +
-          '<label>탐지된 타입<select data-die-index="' + index + '" data-field="specialType">' + buildOptions(SPECIAL_TYPES, die.specialType) + "</select></label>" +
-          '<label>효과 수치<input type="number" min="-20" max="20" data-die-index="' + index + '" data-field="specialValue" value="' + die.specialValue + '" /></label>' +
-          '<div class="muted">' + escapeHtml(die.detectedNote || "자동 탐지") + "</div>" +
+          '<label>눈금<input type="number" min="1" max="6" data-die-index="' + index + '" data-field="value" value="' + die.value + '" /></label>' +
+          '<div class="muted" style="font-size:0.8rem;margin-top:4px">' + escapeHtml(die.detectedNote || "자동 탐지") + "</div>" +
           "</article>"
         );
       })
@@ -954,7 +952,7 @@
     });
   }
 
-  // ─── Claude Vision API 탐지 ───────────────────────────────────────────────
+  // ─── Gemini Vision API 탐지 ───────────────────────────────────────────────
 
   var QUESTION_TILE_EV = 232.5; // 좌(200) vs 우(50*5%+100*45%+300*45%+1000*5%=232.5) → 우 기댓값 채택
 
@@ -1299,7 +1297,7 @@
         effectValue: effectValue,
         leftTarget: i === 0 ? totalTiles - 1 : i - 1,
         rightTarget: i === totalTiles - 1 ? 0 : i + 1,
-        detectedNote: "Claude Vision AI 탐지",
+        detectedNote: "Gemini AI 탐지",
       });
     }
 
@@ -1335,7 +1333,7 @@
         value: clamp(Number(value) || 1, 1, 6),
         specialType: "none",
         specialValue: 0,
-        detectedNote: "Claude AI: 눈금 " + value,
+        detectedNote: "Gemini: 눈금 " + value,
       };
     });
 
@@ -1347,7 +1345,7 @@
         value: 1,
         specialType: "none",
         specialValue: 0,
-        detectedNote: "Claude AI 탐지 누락 - 기본값",
+        detectedNote: "Gemini 탐지 누락 - 기본값",
       });
     }
 
@@ -1387,7 +1385,7 @@
     drawOverlay();
     solveAndRender();
     setDetectionStatus(
-      "Claude AI 탐지 완료 — 진 위치: " + state.currentPosition +
+      "Gemini AI 탐지 완료 — 진 위치: " + state.currentPosition +
       "번 발판, 주사위: " + diceValues.slice(0, 3).join(" / "),
       "success"
     );
