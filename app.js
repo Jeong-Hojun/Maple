@@ -298,12 +298,13 @@
       var diff = round(s.expectedGain - baseEV);
       var diffStr = diff === 0 ? "-" : (diff > 0 ? '<span style="color:#2a8a4a">+' + diff + '</span>' : '<span style="color:#c0392b">' + diff + '</span>');
       var action = "";
-      if (s.firstStep) {
-        if (s.firstStep.useSpecial) {
-          action = "<strong>" + escapeHtml(s.firstStep.dieLabel) + "에 특수 주사위 사용</strong> (기대 +" + s.firstStep.gain + ")";
-        } else {
-          action = escapeHtml(s.firstStep.dieLabel) + " 먼저 사용 → " + s.firstStep.landIdx + "번칸(+" + s.firstStep.gain + ")";
-        }
+      if (s.steps && s.steps.length) {
+        action = s.steps.map(function(step) {
+          if (step.useSpecial) {
+            return "<strong>" + escapeHtml(step.dieLabel) + "</strong>에 특수(기대+" + step.gain + ")";
+          }
+          return escapeHtml(step.dieLabel) + "→" + step.landIdx + "번(+" + step.gain + ")";
+        }).join(" → ");
       }
       var highlight = s.numSpecialDice > 0 && diff > 0 ? ' style="background:rgba(42,138,74,0.07)"' : '';
       return "<tr" + highlight + "><td><strong>" + s.numSpecialDice + "개</strong></td>" +
@@ -1016,9 +1017,11 @@
       "  D) 그 숫자를 dice 배열에 넣는다",
       "",
       "주사위 눈금별 pip 배치 참고:",
-      "  1=중앙 / 2=좌상+우하 / 3=좌상+중앙+우하 / 4=네 모서리 / 5=네 모서리+중앙 / 6=양쪽 3줄",
-      "  ⚠️ 5는 4와 혼동하기 쉽습니다. 중앙 pip이 있으면 5입니다.",
-      "⚠️ 주사위 3개 모두 같은 값(예: 6,6,6)이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
+      "  1=중앙1개 / 2=대각2개(우상·좌하) / 3=대각2개+중앙 / 4=네모서리4개 / 5=네모서리4개+중앙 / 6=양쪽3줄6개",
+      "  ⚠️ 5는 4처럼 보이지만 중앙에 pip이 하나 더 있습니다. 반드시 중앙을 확인하세요.",
+      "  ⚠️ 5는 2처럼 보이지 않습니다. 2는 pip이 2개뿐, 5는 5개입니다.",
+      "  ⚠️ 어두운 배경에서 pip이 잘 안 보이면: 밝은 점을 전부 찾아 합산하세요. 절대 추정하지 마세요.",
+      "⚠️ 주사위 3개 모두 같은 값이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
       "⚠️ 예시 숫자를 절대 복사하지 마세요. 이 이미지의 '선택하기' 위 주사위 3개를 직접 보고 읽으세요.",
       "",
       "=== 3단계: 40개 발판 비료 값 ===",

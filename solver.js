@@ -629,6 +629,7 @@
         // — 특수 주사위 사용 —
         if (specialLeft > 0) {
           var sumG = 0, sumFut = 0;
+          var futCandidates = [];
           SPECIAL_DICE_EFFECTS.forEach(function(effect) {
             var delta = effect.moveFn(die.value) + state.nextRollBonus;
             var lr = landResult(state.position, delta, effect.mult);
@@ -637,13 +638,19 @@
             var g = lr.gain;
             g += applyEffect(ns, tile.effectType, Number(tile.effectValue || 0));
             sumG += g;
-            sumFut += tile.type === "question"
-              ? questionEV(tile, ns, leftover, specialLeft - 1)
-              : search(ns, leftover, specialLeft - 1).ev;
+            var futR = tile.type === "question"
+              ? { ev: questionEV(tile, ns, leftover, specialLeft - 1), steps: [] }
+              : search(ns, leftover, specialLeft - 1);
+            sumFut += futR.ev;
+            futCandidates.push(futR);
           });
+          var avgFut = sumFut / 6;
+          var repSteps = futCandidates.reduce(function(a, b) {
+            return Math.abs(a.ev - avgFut) <= Math.abs(b.ev - avgFut) ? a : b;
+          }).steps;
           var tot = (sumG + sumFut) / 6;
           if (tot > best.ev) {
-            best = { ev: tot, steps: [{ dieLabel: die.label, useSpecial: true, gain: roundTwo(sumG / 6) }] };
+            best = { ev: tot, steps: [{ dieLabel: die.label, useSpecial: true, gain: roundTwo(sumG / 6) }].concat(repSteps) };
           }
         }
       });
@@ -657,7 +664,7 @@
       dice,
       numSpecialDice
     );
-    return { numSpecialDice: numSpecialDice, expectedGain: roundTwo(result.ev), firstStep: result.steps[0] || null };
+    return { numSpecialDice: numSpecialDice, expectedGain: roundTwo(result.ev), steps: result.steps };
   }
 
   // 0~3개 시나리오 한번에 반환
