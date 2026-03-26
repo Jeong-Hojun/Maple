@@ -956,117 +956,24 @@
 
   var QUESTION_TILE_EV = 232.5; // 좌(200) vs 우(50*5%+100*45%+300*45%+1000*5%=232.5) → 우 기댓값 채택
 
-  async function analyzeWithGemini(dataUrl, apiKey) {
+  // 공통 Gemini 호출 + 파싱 (label 파라미터: 디버그용 "보드" or "주사위/진")
+  async function callGeminiRaw(prompt, dataUrl, apiKey, label) {
     var commaIdx = dataUrl.indexOf(",");
     var base64Data = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
     var mimeMatch = dataUrl.match(/data:([^;]+);/);
     var mediaType = mimeMatch ? mimeMatch[1] : "image/png";
-
-    var prompt = [
-      '⚠️ 반드시 지금 이미지를 직접 보고 읽으세요. 아래 예시값은 형식 안내용 플레이스홀더이며 절대 그대로 사용하지 마세요.',
-      "",
-      '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
-      "자주색 UI 패널 바깥 테두리를 따라 사각형으로 이어진 발판(타일) 40개가 보입니다.",
-      "",
-      "=== 1단계: 진 캐릭터 위치 (격자 좌표로 보고) ===",
-      "보드를 11×11 격자로 봅니다. 좌상단=행1·열1, 우하단=행11·열11.",
-      "검은 옷 입은 남성 캐릭터(진)가 있는 칸의 행(row)과 열(col)을 읽으세요.",
-      "  - 하단 행 = row 11 / 상단 행 = row 1 / 왼쪽 열 = col 1 / 오른쪽 열 = col 11",
-      "  예) 왼쪽 열에서 위에서 4번째 칸 → jinRow:4, jinCol:1",
-      "  예) 하단 행 오른쪽에서 3번째 칸 → jinRow:11, jinCol:9",
-      "jinRow와 jinCol을 출력하면 코드가 자동으로 인덱스를 계산합니다.",
-      "",
-      "=== 발판 인덱스 규칙 (tiles 배열용) ===",
-      "- 인덱스 0 (START): 우하단 모서리 (row11·col11)",
-      "- 인덱스 1~10: 하단 행 오른쪽→왼쪽 (row11, col10→col1)",
-      "- 인덱스 11~19: 왼쪽 열 아래→위 (col1, row10→row2), 정확히 9개",
-      "- 인덱스 20~30: 상단 행 왼쪽→오른쪽 (row1, col1→col11), 정확히 11개",
-      "- 인덱스 31~39: 오른쪽 열 위→아래 (col11, row2→row10), 정확히 9개",
-      "⚠️ 각 면 발판 수: 하단 10개+왼쪽 9개+상단 11개+오른쪽 9개+START 1개=40개.",
-      "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
-      "⚠️ 발판 위에 캐릭터·이펙트가 있어도 발판은 1개입니다.",
-      "⚠️ tiles 배열은 정확히 40개여야 합니다.",
-      "하단 행: START(index 0) 바로 왼쪽=index 1, ..., +10칸이동(좌하단)=index 10.",
-      "  START~+10칸이동 사이 9개(index 1~9). ⚠️ 10개로 보이면 잘못 센 것.",
-      "",
-      "고정 랜드마크:",
-      "  index 0=START(우하단,fertilizer:0) / index 10=+10칸이동(좌하단,type:move,effectValue:10) / index 30=?(우상단,type:question)",
-      "",
-      "=== 2단계: 주사위 3개 눈금 (매우 중요 — 반드시 단계별로 추론) ===",
-      "이미지 중앙 패널 하단에 '캐릭터를 움직일 주사위를 골라 이동해주세요' 텍스트가 있습니다.",
-      "그 바로 아래에 정사각형 주사위 3개가 가로로 나란히 있고, 각 주사위 바로 아래 '선택하기' 버튼이 있습니다.",
-      "주사위는 어두운/컬러 배경에 흰색 점(pip)이 찍혀 있습니다.",
-      "",
-      "각 주사위마다 아래 절차를 반드시 따르세요:",
-      "  A) '선택하기' 버튼을 기준으로 바로 위에 있는 정사각형을 찾는다",
-      "  B) 그 정사각형 안의 흰 점을 하나씩 천천히 센다",
-      "  C) 센 개수를 diceReasoning 필드에 '주사위N: 점 위치 [좌상/우상/중앙/...] → 합계 M개' 형식으로 기록한다",
-      "  D) 그 숫자를 dice 배열에 넣는다",
-      "",
-      "주사위 눈금별 pip 배치 참고:",
-      "  1=중앙1개 / 2=대각2개(우상·좌하) / 3=대각2개+중앙 / 4=네모서리4개 / 5=네모서리4개+중앙 / 6=양쪽3줄6개",
-      "  ⚠️ 5는 4처럼 보이지만 중앙에 pip이 하나 더 있습니다. 반드시 중앙을 확인하세요.",
-      "  ⚠️ 5는 2처럼 보이지 않습니다. 2는 pip이 2개뿐, 5는 5개입니다.",
-      "  ⚠️ 어두운 배경에서 pip이 잘 안 보이면: 밝은 점을 전부 찾아 합산하세요. 절대 추정하지 마세요.",
-      "⚠️ 주사위 3개 모두 같은 값이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
-      "⚠️ 예시 숫자를 절대 복사하지 마세요. 이 이미지의 '선택하기' 위 주사위 3개를 직접 보고 읽으세요.",
-      "",
-      "=== 3단계: 40개 발판 비료 값 ===",
-      "각 발판에 표시된 '+숫자' 값을 이미지에서 직접 읽으세요.",
-      "발판 비료값 읽는 법:",
-      "① 발판에 숫자가 보이면 그 숫자를 읽는다",
-      "② 캐릭터/이펙트에 숫자가 가려진 경우 → 배경 색상으로 판단:",
-      "   연분홍/살구색=100 / 청록·민트색=300 / 보라·연보라색=400 / 노랑·황금색=600",
-      "   ⚠️ 숫자가 가려졌으면 반드시 이 색상표를 사용해야 합니다. 기본값 300 쓰지 마세요.",
-      "③ 벌·몬스터 아이콘이 있어도 흰색 큰 숫자가 이미 최종값입니다. 배율 계산하지 마세요.",
-      "   ⚠️ 벌 타일에 숫자가 두 개 보이면(작은 기본값 + 큰 흰색 최종값) 반드시 큰 흰색 숫자를 읽으세요.",
-      "   예) 발판에 작은 '+400'과 큰 흰색 '+800'이 보이면 → fertilizer:800",
-      "발판 종류 (일반 발판은 type 필드 생략):",
-      "- 일반 발판: {\"index\":N,\"fertilizer\":N}",
-      "- 물음표(?) 발판: {\"index\":N,\"fertilizer\":233,\"type\":\"question\"}",
-      "- 이동 발판(+N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":N}",
-      "- 이동 발판(-N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":-N}",
-      "⚠️ 일반 발판에 type 쓰지 마세요 (토큰 절약).",
-      "⚠️ 이동 발판 위치에 별도의 비료값 칸을 삽입하지 마세요.",
-      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fertilizer:0, effectValue:10입니다.",
-      "",
-      "=== 응답 ===",
-      "JSON만 출력하고 다른 텍스트는 쓰지 마세요. label 필드 출력하지 마세요.",
-      "공백 없이 compact JSON: 콜론·쉼표 뒤 공백 없음.",
-      "tiles 배열은 반드시 index 0부터 39까지 정확히 40개여야 합니다.",
-      "출력 순서: tiles → jinRow → jinCol → dice → diceReasoning.",
-      "{",
-      '  "tiles": [',
-      '    {"index":0,"fertilizer":0},',
-      '    {"index":1,"fertilizer":300},',
-      "    ... index 2~9 ...",
-      '    {"index":10,"fertilizer":0,"type":"move","effectValue":10},',
-      "    ... index 11~29 ...",
-      '    {"index":30,"fertilizer":233,"type":"question"},',
-      "    ... index 31~39 ...",
-      '    {"index":39,"fertilizer":400}',
-      "  ],",
-      '  "jinRow": 진이있는행번호,',
-      '  "jinCol": 진이있는열번호,',
-      '  "dice": [주사위1,주사위2,주사위3],',
-      '  "diceReasoning": "주사위1→N개. 주사위2→N개. 주사위3→N개"',
-      "}",
-    ].join("\n");
+    var modelName = elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-3-flash-preview" : "gemini-3-flash-preview";
 
     var response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-3-flash-preview" : "gemini-3-flash-preview") + ":generateContent?key=" + apiKey,
+      "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { inline_data: { mime_type: mediaType, data: base64Data } },
-                { text: prompt },
-              ],
-            },
-          ],
+          contents: [{ parts: [
+            { inline_data: { mime_type: mediaType, data: base64Data } },
+            { text: prompt },
+          ]}],
           generationConfig: { temperature: 0, maxOutputTokens: 16384 },
         }),
       }
@@ -1074,63 +981,38 @@
 
     if (!response.ok) {
       var errText = await response.text();
-      if (response.status === 429) {
-        throw new Error("Gemini 요청 한도 초과(429) — 1분 후 다시 시도하거나, Google AI Studio에서 사용량을 확인하세요.");
-      }
-      throw new Error("Gemini API 오류 " + response.status + ": " + errText.slice(0, 200));
+      if (response.status === 429) throw new Error("Gemini 요청 한도 초과(429) — 1분 후 다시 시도하거나, Google AI Studio에서 사용량을 확인하세요.");
+      throw new Error("Gemini API 오류 " + response.status + " [" + label + "]: " + errText.slice(0, 200));
     }
 
     var responseData = await response.json();
-
-    // 안전 필터 차단 여부 확인
     if (responseData.promptFeedback && responseData.promptFeedback.blockReason) {
       throw new Error("Gemini 안전 필터 차단: " + responseData.promptFeedback.blockReason);
     }
-
     var candidate = responseData.candidates && responseData.candidates[0];
-    if (candidate && candidate.finishReason === "SAFETY") {
-      throw new Error("Gemini 응답이 안전 필터에 의해 차단되었습니다.");
-    }
-    if (candidate && candidate.finishReason === "MAX_TOKENS") {
-      state.debug.rawResponsePreview = "[⚠️ MAX_TOKENS: 모델 출력 토큰 한도 도달. 응답 잘림.]\n" + (state.debug.rawResponsePreview || "");
-    }
+    if (candidate && candidate.finishReason === "SAFETY") throw new Error("Gemini 응답이 안전 필터에 의해 차단되었습니다.");
 
-    var responseText =
-      candidate &&
-      candidate.content &&
-      candidate.content.parts &&
-      candidate.content.parts[0] &&
-      candidate.content.parts[0].text;
+    var truncated = candidate && candidate.finishReason === "MAX_TOKENS";
+    var responseText = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text;
+    if (!responseText) throw new Error("Gemini 응답 파싱 실패 [" + label + "]. 원본: " + JSON.stringify(responseData).slice(0, 300));
 
-    if (!responseText) {
-      var raw = JSON.stringify(responseData).slice(0, 400);
-      throw new Error("Gemini 응답 파싱 실패. 원본: " + raw);
-    }
+    // 디버그 저장
+    state.debug.rawResponsePreview = (state.debug.rawResponsePreview ? state.debug.rawResponsePreview + "\n\n" : "") +
+      "=== " + label + " ===\n" + (truncated ? "[⚠️ MAX_TOKENS]\n" : "") + responseText.slice(0, 1000);
 
-    // 원본 응답을 디버그 패널에 저장 (첫 2000자)
-    state.debug.rawResponsePreview = responseText.slice(0, 2000);
-
-    // 마크다운 코드블록 제거 후 JSON 추출
+    // JSON 추출 + 수리
     var cleaned = responseText.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
     var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Gemini 응답에서 JSON을 찾을 수 없습니다: " + responseText.slice(0, 300));
-    }
+    if (!jsonMatch) throw new Error("Gemini 응답에서 JSON을 찾을 수 없습니다 [" + label + "]: " + responseText.slice(0, 300));
 
     var rawJson = jsonMatch[0];
-
-    // JSON 수리 1: 배열/객체 내 +숫자 → 숫자 (예: [+6, +5], "effectValue": +10)
     rawJson = rawJson.replace(/([:\[,]\s*)\+(\d)/g, "$1$2");
-    // JSON 수리 2: 숫자 뒤에 붙은 한글/텍스트 제거 (예: 300비료 → 300)
     rawJson = rawJson.replace(/(\d+)[가-힣a-zA-Z]+(?=\s*[,}\]])/g, "$1");
-    // JSON 수리 3: 후행 쉼표 제거
     rawJson = rawJson.replace(/,(\s*[\]\}])/g, "$1");
 
-    // 1차 시도: 정상 파싱
     try {
       return JSON.parse(rawJson);
     } catch (firstError) {
-      // 2차 시도: 괄호 복구 후 재파싱
       var opens = (rawJson.match(/[\[{]/g) || []).length;
       var closes = (rawJson.match(/[\]\}]/g) || []).length;
       var repaired = rawJson.trimEnd().replace(/,\s*\{[^{}]*$/, "");
@@ -1143,15 +1025,90 @@
         var r2 = JSON.parse(repaired);
         r2._truncated = true;
         return r2;
-      } catch (secondError) {
-        // 3차 시도: 정규식으로 핵심 필드 추출 (JSON 구조 무시) — 원본 전체 텍스트 대상
+      } catch (_) {
         var fallback = extractGeminiFieldsRegex(responseText);
         fallback._regexFallback = true;
         fallback._parseError = firstError.message;
-        state.debug.rawResponsePreview = (state.debug.rawResponsePreview || "") + "\n\n[파싱 오류: " + firstError.message + "]";
+        state.debug.rawResponsePreview += "\n[파싱 오류 " + label + ": " + firstError.message + "]";
         return fallback;
       }
     }
+  }
+
+  // ── 1차 호출: 보드 40개 타일만 ─────────────────────────────────────────
+  async function analyzeBoardWithGemini(dataUrl, apiKey) {
+    var prompt = [
+      '⚠️ 반드시 이미지를 직접 보고 읽으세요. 예시값은 형식 안내용이며 절대 그대로 쓰지 마세요.',
+      '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
+      "자주색 UI 패널 테두리를 따라 사각형으로 이어진 발판 40개의 비료값을 읽습니다.",
+      "",
+      "=== 발판 인덱스 규칙 ===",
+      "- index 0 (START): 우하단 모서리",
+      "- index 1~10: 하단 행 오른쪽→왼쪽, 정확히 10개",
+      "- index 11~19: 왼쪽 열 아래→위, 정확히 9개",
+      "- index 20~30: 상단 행 왼쪽→오른쪽, 정확히 11개",
+      "- index 31~39: 오른쪽 열 위→아래, 정확히 9개",
+      "⚠️ 총 40개. 모서리 중복 금지. 캐릭터/이펙트가 있어도 발판은 1개.",
+      "고정 랜드마크: index 0=START(fertilizer:0) / index 10=+10칸이동(type:move,effectValue:10) / index 30=?(type:question)",
+      "",
+      "=== 비료값 읽는 법 ===",
+      "① 발판에 보이는 숫자를 읽는다.",
+      "② 숫자가 가려진 경우 배경 색상으로 판단: 연분홍=100 / 청록=300 / 보라=400 / 황금=600",
+      "③ 벌 타일: 숫자 두 개면 큰 흰색 숫자가 최종값. 배율 계산 금지.",
+      "⚠️ +10칸이동의 '10'을 비료값으로 착각 금지. fertilizer:0, effectValue:10.",
+      "",
+      "발판 형식 (일반 발판은 type 생략):",
+      '- 일반: {"index":N,"fertilizer":N}',
+      '- 물음표: {"index":N,"fertilizer":233,"type":"question"}',
+      '- 이동: {"index":N,"fertilizer":0,"type":"move","effectValue":N}',
+      "",
+      "응답: JSON만, compact(공백 없음), tiles 배열 40개.",
+      '{"tiles":[{"index":0,"fertilizer":0},{"index":1,"fertilizer":300},...,{"index":39,"fertilizer":400}]}',
+    ].join("\n");
+    return callGeminiRaw(prompt, dataUrl, apiKey, "보드");
+  }
+
+  // ── 2차 호출: 주사위 3개 + 진 위치만 ──────────────────────────────────
+  async function analyzeDiceJinWithGemini(dataUrl, apiKey) {
+    var prompt = [
+      '⚠️ 반드시 이미지를 직접 보고 읽으세요. 예시값은 형식 안내용이며 절대 그대로 쓰지 마세요.',
+      '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
+      "두 가지만 읽습니다: (1) 진 캐릭터 위치, (2) 주사위 3개 눈금.",
+      "",
+      "=== 진 캐릭터 위치 ===",
+      "보드를 11×11 격자로 봅니다. 좌상단=row1·col1, 우하단=row11·col11.",
+      "검은 옷 남성 캐릭터(진)가 서 있는 발판의 행(jinRow)과 열(jinCol)을 읽으세요.",
+      "  하단 행=row11 / 상단 행=row1 / 왼쪽 열=col1 / 오른쪽 열=col11",
+      "  예) 왼쪽 열 위에서 5번째 칸 → jinRow:5, jinCol:1",
+      "  예) 하단 행 왼쪽에서 3번째 칸 → jinRow:11, jinCol:3",
+      "",
+      "=== 주사위 3개 눈금 ===",
+      "이미지 중앙 하단 '선택하기' 버튼 바로 위 정사각형 3개가 주사위입니다.",
+      "각 주사위의 흰 점(pip) 개수를 하나씩 천천히 세세요:",
+      "  1=중앙1개 / 2=대각2개 / 3=대각2개+중앙 / 4=네모서리4개 / 5=네모서리4개+중앙 / 6=양쪽3줄6개",
+      "⚠️ 5는 중앙 pip이 추가. 4와 혼동 주의. 어두운 배경에서도 밝은 점 전부 세세요.",
+      "⚠️ 3개 모두 같은 값이면 반드시 다시 세세요.",
+      "diceReasoning에 각 주사위별 pip 위치 목록과 합계를 기록하세요.",
+      "",
+      "응답: JSON만, compact.",
+      '{"jinRow":N,"jinCol":N,"dice":[주사위A눈금,주사위B눈금,주사위C눈금],"diceReasoning":"A: 위치목록→N개. B: ..."}',
+    ].join("\n");
+    return callGeminiRaw(prompt, dataUrl, apiKey, "주사위/진");
+  }
+
+  // ── 두 호출 순차 실행 후 병합 ──────────────────────────────────────────
+  async function analyzeWithGemini(dataUrl, apiKey) {
+    state.debug.rawResponsePreview = "";
+    setDetectionStatus("보드 발판 분석 중... (1/2)", "loading");
+    var boardResult = await analyzeBoardWithGemini(dataUrl, apiKey);
+
+    setDetectionStatus("주사위·진 위치 분석 중... (2/2)", "loading");
+    var diceJinResult = await analyzeDiceJinWithGemini(dataUrl, apiKey);
+
+    var merged = Object.assign({}, boardResult, diceJinResult);
+    if (boardResult._truncated || diceJinResult._truncated) merged._truncated = true;
+    if (boardResult._regexFallback || diceJinResult._regexFallback) merged._regexFallback = true;
+    return merged;
   }
 
   // JSON 파싱 실패 시 정규식으로 핵심 필드 추출 (window 방식 — 중첩 {} 무관)
@@ -1305,7 +1262,7 @@
   }
 
   async function detectWithGemini(image, dataUrl, apiKey) {
-    setDetectionStatus("Gemini AI로 보드·주사위·진 위치를 분석 중입니다...", "loading");
+    setDetectionStatus("Gemini AI 분석 시작...", "loading");
 
     var sourceCanvas = createCanvas(
       image.naturalWidth || image.width,
