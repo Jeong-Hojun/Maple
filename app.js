@@ -63,8 +63,8 @@
     solveButton: document.getElementById("solve-button"),
     bestScore: document.getElementById("best-score"),
     bestSummary: document.getElementById("best-summary"),
-    bestSequence: document.getElementById("best-sequence"),
     allResults: document.getElementById("all-results"),
+    specialDiceAnalysis: document.getElementById("special-dice-analysis"),
     warnings: document.getElementById("warnings"),
     debugMeta: document.getElementById("debug-meta"),
     debugRoiCanvas: document.getElementById("debug-roi-canvas"),
@@ -218,6 +218,10 @@
     lines.push("주사위 영역: " + (state.debug.diceRectNote || "없음"));
     lines.push("보드 칸 수: " + state.debug.boardCount);
     lines.push("주사위 탐지: " + (state.debug.diceSummary || "없음"));
+    if (state.debug.rawResponsePreview) {
+      lines.push("\n--- Gemini 원본 응답 (첫 2000자) ---");
+      lines.push(state.debug.rawResponsePreview);
+    }
     elements.debugMeta.textContent = lines.join("\n");
 
     var target = elements.debugRoiCanvas;
@@ -260,22 +264,12 @@
     elements.bestScore.textContent = result.expectedFertilizer.toFixed(2);
     if (!result.bestSequence.length) {
       elements.bestSummary.textContent = "탐지된 보드가 없어서 결과를 계산하지 못했습니다.";
-      elements.bestSequence.innerHTML = "";
       elements.allResults.innerHTML = "";
       renderWarnings(result.warnings);
       return;
     }
 
     elements.bestSummary.textContent = "이벤트 UI 영역을 먼저 찾은 뒤 상대좌표로 계산한 결과입니다. 값이 다르면 바로 수정해 주세요.";
-    elements.bestSequence.innerHTML = result.bestSequence
-      .map(function mapStep(step, index) {
-        var line = step.dieLabel + " -> " + step.optionLabel + " -> " + step.tileLabel + " (+" + round(step.immediateGain) + ")";
-        if (step.branchMeta) {
-          line += " / 좌 기대값 " + round(step.branchMeta.leftExpected) + ", 우 기대값 " + round(step.branchMeta.rightExpected);
-        }
-        return "<li><strong>" + (index + 1) + "턴</strong> " + escapeHtml(line) + "</li>";
-      })
-      .join("");
 
     elements.allResults.innerHTML =
       '<table><thead><tr><th>순위</th><th>주사위 순서</th><th>기대 비료</th><th>주요 경로</th></tr></thead><tbody>' +
@@ -285,6 +279,43 @@
       "</tbody></table>";
 
     renderWarnings((state.warnings || []).concat(result.warnings || []));
+    renderSpecialDiceAnalysis();
+  }
+
+  function renderSpecialDiceAnalysis() {
+    var el = elements.specialDiceAnalysis;
+    if (!el) return;
+    if (!state.board || !state.board.length || !state.dice || !state.dice.length) {
+      el.innerHTML = "";
+      return;
+    }
+
+    var cfg = { currentPosition: state.currentPosition, board: state.board, dice: state.dice, questionPolicy: state.questionPolicy };
+    var scenarios = window.GardenSolver.analyzeAllSpecialScenarios(cfg);
+    var baseEV = scenarios[0].expectedGain;
+
+    var rows = scenarios.map(function(s) {
+      var diff = round(s.expectedGain - baseEV);
+      var diffStr = diff === 0 ? "-" : (diff > 0 ? '<span style="color:#2a8a4a">+' + diff + '</span>' : '<span style="color:#c0392b">' + diff + '</span>');
+      var action = "";
+      if (s.steps && s.steps.length) {
+        action = s.steps.map(function(step) {
+          if (step.useSpecial) {
+            return "<strong>" + escapeHtml(step.dieLabel) + "</strong>에 특수(기대+" + step.gain + ")";
+          }
+          return escapeHtml(step.dieLabel) + "→" + step.landIdx + "번(+" + step.gain + ")";
+        }).join(" → ");
+      }
+      var highlight = s.numSpecialDice > 0 && diff > 0 ? ' style="background:rgba(42,138,74,0.07)"' : '';
+      return "<tr" + highlight + "><td><strong>" + s.numSpecialDice + "개</strong></td>" +
+        "<td><strong>" + s.expectedGain + "</strong></td>" +
+        "<td>" + diffStr + "</td>" +
+        "<td style='font-size:0.78rem'>" + action + "</td></tr>";
+    });
+
+    el.innerHTML =
+      '<table><thead><tr><th>특수 주사위</th><th>최적 기댓값</th><th>증가분</th><th>첫 수 권장</th></tr></thead>' +
+      '<tbody>' + rows.join("") + '</tbody></table>';
   }
 
   function solveAndRender() {
@@ -950,14 +981,29 @@
       '이 스크린샷은 메이플스토리 이벤트 "진의 신비한 정원"입니다.',
       "자주색 UI 패널 바깥 테두리를 따라 사각형으로 이어진 발판(타일) 40개가 보입니다.",
       "",
-      "=== 1단계: 진 캐릭터 위치 ===",
-      "검은 옷 입은 남성 캐릭터(진)가 어느 발판 위에 서 있는지 이미지에서 찾으세요.",
-      "발판 인덱스 규칙 (총 40개, 이미지에서 직접 세어야 합니다):",
-      "- 인덱스 0 (START): 오른쪽 하단 모서리 (STA 텍스트 보임)",
-      "- 인덱스 1~10: 하단 행을 오른쪽→왼쪽 (10개)",
-      "- 인덱스 11~19: 왼쪽 열을 아래→위 (9개)",
-      "- 인덱스 20~30: 상단 행을 왼쪽→오른쪽 (11개)",
-      "- 인덱스 31~39: 오른쪽 열을 위→아래 (9개)",
+      "=== 1단계: 진 캐릭터 위치 (격자 좌표로 보고) ===",
+      "보드를 11×11 격자로 봅니다. 좌상단=행1·열1, 우하단=행11·열11.",
+      "검은 옷 입은 남성 캐릭터(진)가 있는 칸의 행(row)과 열(col)을 읽으세요.",
+      "  - 하단 행 = row 11 / 상단 행 = row 1 / 왼쪽 열 = col 1 / 오른쪽 열 = col 11",
+      "  예) 왼쪽 열에서 위에서 4번째 칸 → jinRow:4, jinCol:1",
+      "  예) 하단 행 오른쪽에서 3번째 칸 → jinRow:11, jinCol:9",
+      "jinRow와 jinCol을 출력하면 코드가 자동으로 인덱스를 계산합니다.",
+      "",
+      "=== 발판 인덱스 규칙 (tiles 배열용) ===",
+      "- 인덱스 0 (START): 우하단 모서리 (row11·col11)",
+      "- 인덱스 1~10: 하단 행 오른쪽→왼쪽 (row11, col10→col1)",
+      "- 인덱스 11~19: 왼쪽 열 아래→위 (col1, row10→row2), 정확히 9개",
+      "- 인덱스 20~30: 상단 행 왼쪽→오른쪽 (row1, col1→col11), 정확히 11개",
+      "- 인덱스 31~39: 오른쪽 열 위→아래 (col11, row2→row10), 정확히 9개",
+      "⚠️ 각 면 발판 수: 하단 10개+왼쪽 9개+상단 11개+오른쪽 9개+START 1개=40개.",
+      "⚠️ 모서리 칸을 두 면에 중복 계산하지 마세요.",
+      "⚠️ 발판 위에 캐릭터·이펙트가 있어도 발판은 1개입니다.",
+      "⚠️ tiles 배열은 정확히 40개여야 합니다.",
+      "하단 행: START(index 0) 바로 왼쪽=index 1, ..., +10칸이동(좌하단)=index 10.",
+      "  START~+10칸이동 사이 9개(index 1~9). ⚠️ 10개로 보이면 잘못 센 것.",
+      "",
+      "고정 랜드마크:",
+      "  index 0=START(우하단,fertilizer:0) / index 10=+10칸이동(좌하단,type:move,effectValue:10) / index 30=?(우상단,type:question)",
       "",
       "=== 2단계: 주사위 3개 눈금 (매우 중요 — 반드시 단계별로 추론) ===",
       "이미지 중앙 패널 하단에 '캐릭터를 움직일 주사위를 골라 이동해주세요' 텍스트가 있습니다.",
@@ -970,41 +1016,58 @@
       "  C) 센 개수를 diceReasoning 필드에 '주사위N: 점 위치 [좌상/우상/중앙/...] → 합계 M개' 형식으로 기록한다",
       "  D) 그 숫자를 dice 배열에 넣는다",
       "",
-      "⚠️ 주사위 3개 모두 같은 값(예: 6,6,6)이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
+      "주사위 눈금별 pip 배치 참고:",
+      "  1=중앙1개 / 2=대각2개(우상·좌하) / 3=대각2개+중앙 / 4=네모서리4개 / 5=네모서리4개+중앙 / 6=양쪽3줄6개",
+      "  ⚠️ 5는 4처럼 보이지만 중앙에 pip이 하나 더 있습니다. 반드시 중앙을 확인하세요.",
+      "  ⚠️ 5는 2처럼 보이지 않습니다. 2는 pip이 2개뿐, 5는 5개입니다.",
+      "  ⚠️ 어두운 배경에서 pip이 잘 안 보이면: 밝은 점을 전부 찾아 합산하세요. 절대 추정하지 마세요.",
+      "⚠️ 주사위 3개 모두 같은 값이 나오면 반드시 다시 세세요. 실제로 같은 경우는 극히 드뭅니다.",
       "⚠️ 예시 숫자를 절대 복사하지 마세요. 이 이미지의 '선택하기' 위 주사위 3개를 직접 보고 읽으세요.",
       "",
       "=== 3단계: 40개 발판 비료 값 ===",
       "각 발판에 표시된 '+숫자' 값을 이미지에서 직접 읽으세요.",
-      "발판 종류:",
-      "- 일반 발판: '+N' 표시 → type:\"normal\", fertilizer:N",
-      "- 물음표(?) 발판 → type:\"question\", fertilizer:233",
-      "- 이동 발판(+N칸이동) → type:\"move\", effectValue:N, fertilizer:0  ※ 이 칸 1개만 tiles 배열에 추가",
-      "- 이동 발판(-N칸이동) → type:\"move\", effectValue:-N, fertilizer:0  ※ 이 칸 1개만 tiles 배열에 추가",
-      "⚠️ 이동 발판 위치에 별도의 비료값 칸(예: +300)을 추가로 삽입하지 마세요. 이동 발판 1개는 tiles 배열 항목 1개입니다.",
-      "⚠️ '+10칸이동' 텍스트에서 숫자 10을 비료값으로 착각하지 마세요. 반드시 fertilizer:0, effectValue:10입니다.",
-      "- START(인덱스0) → type:\"normal\", fertilizer:0",
-      "- 황금 벌 있는 발판 → 비료 값 2배",
-      "- 신비한 벌 있는 발판 → 비료 값 3배",
-      "- 독 호문스큘러 있는 발판 → 비료 값 절반",
+      "발판 비료값 읽는 법:",
+      "① 발판에 숫자가 보이면 그 숫자를 읽는다",
+      "② 캐릭터/이펙트에 숫자가 가려진 경우 → 배경 색상으로 판단:",
+      "   연분홍/살구색=100 / 청록·민트색=300 / 보라·연보라색=400 / 노랑·황금색=600",
+      "   ⚠️ 숫자가 가려졌으면 반드시 이 색상표를 사용해야 합니다. 기본값 300 쓰지 마세요.",
+      "③ 벌·몬스터 아이콘이 있어도 흰색 큰 숫자가 이미 최종값입니다. 배율 계산하지 마세요.",
+      "   ⚠️ 벌 타일에 숫자가 두 개 보이면(작은 기본값 + 큰 흰색 최종값) 반드시 큰 흰색 숫자를 읽으세요.",
+      "   예) 발판에 작은 '+400'과 큰 흰색 '+800'이 보이면 → fertilizer:800",
+      "발판 종류 (일반 발판은 type 필드 생략):",
+      "- 일반 발판: {\"index\":N,\"fertilizer\":N}",
+      "- 물음표(?) 발판: {\"index\":N,\"fertilizer\":233,\"type\":\"question\"}",
+      "- 이동 발판(+N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":N}",
+      "- 이동 발판(-N칸이동): {\"index\":N,\"fertilizer\":0,\"type\":\"move\",\"effectValue\":-N}",
+      "⚠️ 일반 발판에 type 쓰지 마세요 (토큰 절약).",
+      "⚠️ 이동 발판 위치에 별도의 비료값 칸을 삽입하지 마세요.",
+      "⚠️ '+10칸이동' 숫자 10을 비료값으로 착각하지 마세요. fertilizer:0, effectValue:10입니다.",
       "",
       "=== 응답 ===",
-      "JSON만 출력하고 다른 텍스트는 쓰지 마세요.",
+      "JSON만 출력하고 다른 텍스트는 쓰지 마세요. label 필드 출력하지 마세요.",
+      "공백 없이 compact JSON: 콜론·쉼표 뒤 공백 없음.",
       "tiles 배열은 반드시 index 0부터 39까지 정확히 40개여야 합니다.",
+      "출력 순서: tiles → jinRow → jinCol → dice → diceReasoning.",
       "{",
-      '  "diceReasoning": "주사위1: 점 위치 [설명] → N개. 주사위2: → N개. 주사위3: → N개",',
-      '  "jinTileIndex": <이미지에서_읽은_인덱스>,',
-      '  "dice": [<주사위1_실제눈금>, <주사위2_실제눈금>, <주사위3_실제눈금>],',
       '  "tiles": [',
-      '    {"index": 0, "fertilizer": 0, "type": "normal", "label": "START"},',
-      '    {"index": 1, "fertilizer": <이미지값>, "type": "normal", "label": "<라벨>"},',
-      "    ... index 2~39 동일하게, 반드시 총 40개 ...",
+      '    {"index":0,"fertilizer":0},',
+      '    {"index":1,"fertilizer":300},',
+      "    ... index 2~9 ...",
+      '    {"index":10,"fertilizer":0,"type":"move","effectValue":10},',
+      "    ... index 11~29 ...",
+      '    {"index":30,"fertilizer":233,"type":"question"},',
+      "    ... index 31~39 ...",
+      '    {"index":39,"fertilizer":400}',
       "  ],",
-      '  "notes": "<탐지_메모>"',
+      '  "jinRow": 진이있는행번호,',
+      '  "jinCol": 진이있는열번호,',
+      '  "dice": [주사위1,주사위2,주사위3],',
+      '  "diceReasoning": "주사위1→N개. 주사위2→N개. 주사위3→N개"',
       "}",
     ].join("\n");
 
     var response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-2.0-flash" : "gemini-2.0-flash") + ":generateContent?key=" + apiKey,
+      "https://generativelanguage.googleapis.com/v1beta/models/" + (elements.geminiModel ? elements.geminiModel.value.trim() || "gemini-3-flash-preview" : "gemini-3-flash-preview") + ":generateContent?key=" + apiKey,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1041,6 +1104,9 @@
     if (candidate && candidate.finishReason === "SAFETY") {
       throw new Error("Gemini 응답이 안전 필터에 의해 차단되었습니다.");
     }
+    if (candidate && candidate.finishReason === "MAX_TOKENS") {
+      state.debug.rawResponsePreview = "[⚠️ MAX_TOKENS: 모델 출력 토큰 한도 도달. 응답 잘림.]\n" + (state.debug.rawResponsePreview || "");
+    }
 
     var responseText =
       candidate &&
@@ -1054,6 +1120,9 @@
       throw new Error("Gemini 응답 파싱 실패. 원본: " + raw);
     }
 
+    // 원본 응답을 디버그 패널에 저장 (첫 2000자)
+    state.debug.rawResponsePreview = responseText.slice(0, 2000);
+
     // 마크다운 코드블록 제거 후 JSON 추출
     var cleaned = responseText.replace(/```json\s*/gi, "").replace(/```\s*/g, "");
     var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -1063,45 +1132,142 @@
 
     var rawJson = jsonMatch[0];
 
-    // JSON 수리: +숫자 → 숫자 (예: "fertilizer": +300 → 300)
-    rawJson = rawJson.replace(/:\s*\+(\d)/g, ": $1");
-    // JSON 수리: 후행 쉼표 제거 (, 뒤에 ] 또는 })
+    // JSON 수리 1: 배열/객체 내 +숫자 → 숫자 (예: [+6, +5], "effectValue": +10)
+    rawJson = rawJson.replace(/([:\[,]\s*)\+(\d)/g, "$1$2");
+    // JSON 수리 2: 숫자 뒤에 붙은 한글/텍스트 제거 (예: 300비료 → 300)
+    rawJson = rawJson.replace(/(\d+)[가-힣a-zA-Z]+(?=\s*[,}\]])/g, "$1");
+    // JSON 수리 3: 후행 쉼표 제거
     rawJson = rawJson.replace(/,(\s*[\]\}])/g, "$1");
 
-    // JSON 파싱 시도, 실패 시 잘린 배열 복구 후 재시도
+    // 1차 시도: 정상 파싱
     try {
       return JSON.parse(rawJson);
     } catch (firstError) {
-      // 열린 괄호 수를 세어 닫힘 괄호 추가
+      // 2차 시도: 괄호 복구 후 재파싱
       var opens = (rawJson.match(/[\[{]/g) || []).length;
       var closes = (rawJson.match(/[\]\}]/g) || []).length;
-      var repaired = rawJson.trimEnd();
-      // 마지막 불완전 객체 항목 제거 (쉼표 없이 끝나는 불완전 토큰)
-      repaired = repaired.replace(/,\s*\{[^{}]*$/, "");
+      var repaired = rawJson.trimEnd().replace(/,\s*\{[^{}]*$/, "");
       while (opens > closes) {
-        var last = repaired[repaired.length - 1];
-        if (last === "[" || last === ",") {
-          repaired += "]";
-        } else {
-          repaired += "}";
-        }
+        repaired += (repaired.slice(-1) === "[" || repaired.slice(-1) === ",") ? "]" : "}";
         closes++;
       }
       repaired = repaired.replace(/,(\s*[\]\}])/g, "$1");
       try {
-        var result = JSON.parse(repaired);
-        result._truncated = true;
-        return result;
+        var r2 = JSON.parse(repaired);
+        r2._truncated = true;
+        return r2;
       } catch (secondError) {
-        throw new Error("JSON 파싱 실패: " + firstError.message + " (수리 후도 실패: " + secondError.message + ")");
+        // 3차 시도: 정규식으로 핵심 필드 추출 (JSON 구조 무시) — 원본 전체 텍스트 대상
+        var fallback = extractGeminiFieldsRegex(responseText);
+        fallback._regexFallback = true;
+        fallback._parseError = firstError.message;
+        state.debug.rawResponsePreview = (state.debug.rawResponsePreview || "") + "\n\n[파싱 오류: " + firstError.message + "]";
+        return fallback;
       }
     }
+  }
+
+  // JSON 파싱 실패 시 정규식으로 핵심 필드 추출 (window 방식 — 중첩 {} 무관)
+  function extractGeminiFieldsRegex(text) {
+    var result = { tiles: [], dice: [1, 1, 1], jinTileIndex: 0, diceReasoning: "", notes: "" };
+    var m;
+
+    m = text.match(/"jinTileIndex"\s*:\s*(\d+)/);
+    if (m) result.jinTileIndex = parseInt(m[1]);
+    m = text.match(/"jinRow"\s*:\s*(\d+)/);
+    if (m) result.jinRow = parseInt(m[1]);
+    m = text.match(/"jinCol"\s*:\s*(\d+)/);
+    if (m) result.jinCol = parseInt(m[1]);
+
+    m = text.match(/"dice"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) result.dice = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+
+    m = text.match(/"diceReasoning"\s*:\s*"([^"]*)"/);
+    if (m) result.diceReasoning = m[1];
+
+    m = text.match(/"notes"\s*:\s*"([^"]*)"/);
+    if (m) result.notes = m[1];
+
+    // "index": N 위치 수집
+    var indexRe = /[{,]\s*"index"\s*:\s*(\d+)/g;
+    var positions = [];
+    var tm;
+    while ((tm = indexRe.exec(text)) !== null) {
+      var idx = parseInt(tm[1]);
+      if (idx >= 0 && idx <= 39) {
+        positions.push({ idx: idx, pos: tm.index });
+      }
+    }
+
+    for (var i = 0; i < positions.length; i++) {
+      var idx = positions[i].idx;
+      var wStart = positions[i].pos;
+      var wEnd = i + 1 < positions.length ? positions[i + 1].pos : Math.min(text.length, wStart + 400);
+      var win = text.slice(wStart, wEnd);
+
+      var fert = 0, type = "normal", effectValue = 0;
+      var fm = win.match(/"fertilizer"\s*:\s*(\d+)/); if (fm) fert = parseInt(fm[1]);
+      var tyM = win.match(/"type"\s*:\s*"(\w+)"/); if (tyM) type = tyM[1];
+      var em = win.match(/"effectValue"\s*:\s*(-?\d+)/); if (em) effectValue = parseInt(em[1]);
+      result.tiles.push({ index: idx, fertilizer: fert, type: type, effectValue: effectValue });
+    }
+
+    // 중복 index 제거 (마지막 것 우선)
+    var seen = {};
+    var deduped = [];
+    for (var j = result.tiles.length - 1; j >= 0; j--) {
+      if (!seen[result.tiles[j].index]) {
+        seen[result.tiles[j].index] = true;
+        deduped.unshift(result.tiles[j]);
+      }
+    }
+    result.tiles = deduped;
+
+    return result;
+  }
+
+  // 11×11 격자 좌표(row 1=상단, col 1=좌측) → 타일 인덱스
+  function gridToTileIndex(row, col) {
+    row = Number(row); col = Number(col);
+    if (row === 11) return 11 - col;               // 하단: col11→0, col1→10
+    if (col === 1 && row >= 2 && row <= 10) return 21 - row;  // 왼쪽: row10→11, row2→19
+    if (row === 1) return 19 + col;                // 상단: col1→20, col11→30
+    if (col === 11 && row >= 2 && row <= 10) return 29 + row; // 오른쪽: row2→31, row10→39
+    return 0;
+  }
+
+  function repairTileExtras(tilesData) {
+    // 각 구간별로 extra 타일 삽입 감지 후 재인덱싱
+    // 구간: [1-9]=9개, [11-19]=9개, [20-29]=10개, [31-39]=9개 (모서리 랜드마크 제외)
+    var sorted = tilesData.slice().sort(function(a, b) { return a.index - b.index; });
+    var segments = [
+      { start: 1, end: 9 },
+      { start: 11, end: 19 },
+      { start: 20, end: 29 },
+      { start: 31, end: 39 },
+    ];
+    var repaired = [];
+    var landmarks = sorted.filter(function(t) { return t.index === 0 || t.index === 10 || t.index === 30; });
+    repaired = repaired.concat(landmarks);
+
+    segments.forEach(function(seg) {
+      var tiles = sorted.filter(function(t) { return t.index >= seg.start && t.index <= seg.end; });
+      var expected = seg.end - seg.start + 1;
+      if (tiles.length > expected) {
+        tiles = tiles.slice(0, expected);
+      }
+      tiles.forEach(function(t, i) { t.index = seg.start + i; });
+      repaired = repaired.concat(tiles);
+    });
+    return repaired;
   }
 
   function buildBoardFromClaudeResult(claudeResult) {
     var totalTiles =
       BOARD_SEGMENTS.bottom + BOARD_SEGMENTS.left + BOARD_SEGMENTS.top + BOARD_SEGMENTS.right;
     var tilesData = claudeResult.tiles || [];
+    tilesData = repairTileExtras(tilesData);
+    claudeResult._tileCount = tilesData.length;
     var board = [];
     var i;
     var j;
@@ -1164,7 +1330,13 @@
     var claudeResult = await analyzeWithGemini(dataUrl, apiKey);
 
     state.board = buildBoardFromClaudeResult(claudeResult);
-    state.currentPosition = clamp(Number(claudeResult.jinTileIndex || 0), 0, state.board.length - 1);
+    var jinIdx = 0;
+    if (claudeResult.jinRow && claudeResult.jinCol) {
+      jinIdx = gridToTileIndex(claudeResult.jinRow, claudeResult.jinCol);
+    } else if (claudeResult.jinTileIndex) {
+      jinIdx = Number(claudeResult.jinTileIndex);
+    }
+    state.currentPosition = clamp(jinIdx, 0, state.board.length - 1);
 
     var diceValues = claudeResult.dice || [1, 1, 1];
     state.dice = diceValues.slice(0, 3).map(function buildDie(value, index) {
@@ -1190,9 +1362,15 @@
       });
     }
 
+    var tileCountWarn = "";
+    if (claudeResult._tileCount !== undefined && claudeResult._tileCount !== 40) {
+      tileCountWarn = "⚠️ Gemini가 발판을 " + claudeResult._tileCount + "개 탐지했습니다 (정상: 40개). 보드에 잘못 삽입된 칸이 있을 수 있으니 직접 확인해 주세요.";
+    }
     state.warnings = [
       "Gemini Vision AI로 자동 탐지했습니다.",
+      tileCountWarn,
       claudeResult._truncated ? "⚠️ Gemini 응답이 잘려서 일부 발판 정보가 누락됐을 수 있습니다. 보드 칸 수를 확인해 주세요." : "",
+      claudeResult._regexFallback ? "⚠️ JSON 파싱 실패 — 정규식으로 데이터를 복구했습니다. 값을 반드시 확인해 주세요." : "",
       claudeResult.notes ? "AI 메모: " + claudeResult.notes : "",
     ].filter(Boolean);
 
@@ -1206,6 +1384,10 @@
     state.debug.eventRectNote = "Gemini Vision API 사용";
     state.debug.boardRectNote = "Gemini AI 탐지 (픽셀 좌표 없음)";
     state.debug.diceRectNote = claudeResult.diceReasoning || "추론 없음";
+    var rawTiles = claudeResult.tiles || [];
+    state.debug.rawTilesPreview = rawTiles.slice(0, 13).map(function(t) {
+      return "[" + t.index + "] " + t.type + " fert=" + t.fertilizer + (t.effectValue ? " ev=" + t.effectValue : "") + (t.label ? " \"" + t.label + "\"" : "");
+    }).join("\n");
     state.debug.boardCount = state.board.length;
     state.debug.diceSummary = state.dice
       .map(function mapDie(d) { return d.label + ":" + d.value; })

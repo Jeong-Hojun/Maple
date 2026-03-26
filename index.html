@@ -24,11 +24,7 @@
           </div>
           <div class="hero-stat">
             <span>탐지 방식</span>
-            <strong>보드 템플릿 + OCR + 색상 분류</strong>
-          </div>
-          <div class="hero-stat">
-            <span>계산 기준</span>
-            <strong>3개 주사위 완전탐색</strong>
+            <strong>Gemini Vision AI 자동 분석</strong>
           </div>
         </div>
       </header>
@@ -78,7 +74,7 @@
               </label>
               <label class="api-key-label" style="margin-top:10px;">
                 모델
-                <input id="gemini-model" type="text" value="gemini-2.5-flash" placeholder="gemini-2.5-flash" style="margin-top:4px;padding:8px 12px;border:1px solid rgba(44,122,89,0.3);border-radius:12px;width:100%;background:rgba(255,255,255,0.75);" />
+                <input id="gemini-model" type="text" value="gemini-3-flash-preview" placeholder="gemini-3-flash-preview" style="margin-top:4px;padding:8px 12px;border:1px solid rgba(44,122,89,0.3);border-radius:12px;width:100%;background:rgba(255,255,255,0.75);" />
               </label>
               <p class="muted small">
                 API 키를 입력하면 이미지 업로드 시 Gemini AI가 보드·주사위·진 위치를 자동으로 분석합니다.
@@ -175,13 +171,14 @@
           </div>
 
           <div class="result-card">
-            <span class="result-label">추천 순서</span>
-            <ol id="best-sequence" class="timeline-list"></ol>
+            <span class="result-label">전체 경우의 수 비교</span>
+            <div id="all-results" class="table-wrap"></div>
           </div>
 
           <div class="result-card">
-            <span class="result-label">전체 경우의 수 비교</span>
-            <div id="all-results" class="table-wrap"></div>
+            <span class="result-label">특수 주사위 사용 분석</span>
+            <p style="font-size:0.78rem;color:var(--muted);margin:0 0 8px">효과 6종 (×2·×3·도착칸×2·-5·-10·×(-3)) 각 1/6 확률. 즉시 비료 기준.</p>
+            <div id="special-dice-analysis" class="table-wrap"></div>
           </div>
 
           <div id="warnings" class="warning-list"></div>
