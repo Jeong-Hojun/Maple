@@ -68,16 +68,13 @@
     warnings: document.getElementById("warnings"),
     debugMeta: document.getElementById("debug-meta"),
     debugRoiCanvas: document.getElementById("debug-roi-canvas"),
-    manualBoardX: document.getElementById("manual-board-x"),
-    manualBoardY: document.getElementById("manual-board-y"),
-    manualBoardW: document.getElementById("manual-board-w"),
-    manualBoardH: document.getElementById("manual-board-h"),
     manualDiceX: document.getElementById("manual-dice-x"),
     manualDiceY: document.getElementById("manual-dice-y"),
     manualDiceW: document.getElementById("manual-dice-w"),
     manualDiceH: document.getElementById("manual-dice-h"),
-    applyBoardRoi: document.getElementById("apply-board-roi"),
     applyDiceRoi: document.getElementById("apply-dice-roi"),
+    debugToggle: document.getElementById("debug-toggle"),
+    debugFloatBody: document.getElementById("debug-float-body"),
     claudeApiKey: document.getElementById("claude-api-key"),
     claudeApiSave: document.getElementById("claude-api-save"),
     claudeApiStatus: document.getElementById("claude-api-status"),
@@ -154,10 +151,8 @@
         return (
           '<article class="dice-card">' +
           "<h4>" + escapeHtml(die.label) + "</h4>" +
-          '<label>탐지된 눈금<input type="number" min="1" max="6" data-die-index="' + index + '" data-field="value" value="' + die.value + '" /></label>' +
-          '<label>탐지된 타입<select data-die-index="' + index + '" data-field="specialType">' + buildOptions(SPECIAL_TYPES, die.specialType) + "</select></label>" +
-          '<label>효과 수치<input type="number" min="-20" max="20" data-die-index="' + index + '" data-field="specialValue" value="' + die.specialValue + '" /></label>' +
-          '<div class="muted">' + escapeHtml(die.detectedNote || "자동 탐지") + "</div>" +
+          '<label>눈금<input type="number" min="1" max="6" data-die-index="' + index + '" data-field="value" value="' + die.value + '" /></label>' +
+          '<div class="muted" style="font-size:0.8rem;margin-top:4px">' + escapeHtml(die.detectedNote || "자동 탐지") + "</div>" +
           "</article>"
         );
       })
@@ -242,15 +237,7 @@
   }
 
   function syncManualInputs() {
-    var boardRect = state.detectionMeta.boardRect || state.detectionMeta.eventRect;
     var diceRect = state.detectionMeta.diceRect;
-
-    if (boardRect) {
-      elements.manualBoardX.value = boardRect.x;
-      elements.manualBoardY.value = boardRect.y;
-      elements.manualBoardW.value = boardRect.width;
-      elements.manualBoardH.value = boardRect.height;
-    }
 
     if (diceRect) {
       elements.manualDiceX.value = diceRect.x;
@@ -965,7 +952,7 @@
     });
   }
 
-  // ─── Claude Vision API 탐지 ───────────────────────────────────────────────
+  // ─── Gemini Vision API 탐지 ───────────────────────────────────────────────
 
   var QUESTION_TILE_EV = 232.5; // 좌(200) vs 우(50*5%+100*45%+300*45%+1000*5%=232.5) → 우 기댓값 채택
 
@@ -1310,7 +1297,7 @@
         effectValue: effectValue,
         leftTarget: i === 0 ? totalTiles - 1 : i - 1,
         rightTarget: i === totalTiles - 1 ? 0 : i + 1,
-        detectedNote: "Claude Vision AI 탐지",
+        detectedNote: "Gemini AI 탐지",
       });
     }
 
@@ -1346,7 +1333,7 @@
         value: clamp(Number(value) || 1, 1, 6),
         specialType: "none",
         specialValue: 0,
-        detectedNote: "Claude AI: 눈금 " + value,
+        detectedNote: "Gemini: 눈금 " + value,
       };
     });
 
@@ -1358,7 +1345,7 @@
         value: 1,
         specialType: "none",
         specialValue: 0,
-        detectedNote: "Claude AI 탐지 누락 - 기본값",
+        detectedNote: "Gemini 탐지 누락 - 기본값",
       });
     }
 
@@ -1398,7 +1385,7 @@
     drawOverlay();
     solveAndRender();
     setDetectionStatus(
-      "Claude AI 탐지 완료 — 진 위치: " + state.currentPosition +
+      "Gemini AI 탐지 완료 — 진 위치: " + state.currentPosition +
       "번 발판, 주사위: " + diceValues.slice(0, 3).join(" / "),
       "success"
     );
@@ -1632,18 +1619,6 @@
     solveAndRender();
   });
 
-  elements.applyBoardRoi.addEventListener("click", function onApplyBoardRoi() {
-    reanalyzeWithManualRects(
-      {
-        x: Number(elements.manualBoardX.value || 0),
-        y: Number(elements.manualBoardY.value || 0),
-        width: Number(elements.manualBoardW.value || 1),
-        height: Number(elements.manualBoardH.value || 1),
-      },
-      state.detectionMeta.diceRect || null
-    );
-  });
-
   elements.applyDiceRoi.addEventListener("click", function onApplyDiceRoi() {
     var boardRect = state.detectionMeta.boardRect || state.detectionMeta.eventRect;
     if (!boardRect) {
@@ -1659,6 +1634,14 @@
       height: Number(elements.manualDiceH.value || 1),
     });
   });
+
+  if (elements.debugToggle) {
+    elements.debugToggle.addEventListener("click", function() {
+      var body = elements.debugFloatBody;
+      var isOpen = body.classList.toggle("open");
+      elements.debugToggle.textContent = isOpen ? "✕ 디버그 닫기" : "🔍 디버그";
+    });
+  }
 
   elements.diceEditor.addEventListener("input", syncEditorState);
   elements.diceEditor.addEventListener("change", syncEditorState);
