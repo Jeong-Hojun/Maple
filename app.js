@@ -68,16 +68,13 @@
     warnings: document.getElementById("warnings"),
     debugMeta: document.getElementById("debug-meta"),
     debugRoiCanvas: document.getElementById("debug-roi-canvas"),
-    manualBoardX: document.getElementById("manual-board-x"),
-    manualBoardY: document.getElementById("manual-board-y"),
-    manualBoardW: document.getElementById("manual-board-w"),
-    manualBoardH: document.getElementById("manual-board-h"),
     manualDiceX: document.getElementById("manual-dice-x"),
     manualDiceY: document.getElementById("manual-dice-y"),
     manualDiceW: document.getElementById("manual-dice-w"),
     manualDiceH: document.getElementById("manual-dice-h"),
-    applyBoardRoi: document.getElementById("apply-board-roi"),
     applyDiceRoi: document.getElementById("apply-dice-roi"),
+    debugToggle: document.getElementById("debug-toggle"),
+    debugFloatBody: document.getElementById("debug-float-body"),
     claudeApiKey: document.getElementById("claude-api-key"),
     claudeApiSave: document.getElementById("claude-api-save"),
     claudeApiStatus: document.getElementById("claude-api-status"),
@@ -242,15 +239,7 @@
   }
 
   function syncManualInputs() {
-    var boardRect = state.detectionMeta.boardRect || state.detectionMeta.eventRect;
     var diceRect = state.detectionMeta.diceRect;
-
-    if (boardRect) {
-      elements.manualBoardX.value = boardRect.x;
-      elements.manualBoardY.value = boardRect.y;
-      elements.manualBoardW.value = boardRect.width;
-      elements.manualBoardH.value = boardRect.height;
-    }
 
     if (diceRect) {
       elements.manualDiceX.value = diceRect.x;
@@ -1632,18 +1621,6 @@
     solveAndRender();
   });
 
-  elements.applyBoardRoi.addEventListener("click", function onApplyBoardRoi() {
-    reanalyzeWithManualRects(
-      {
-        x: Number(elements.manualBoardX.value || 0),
-        y: Number(elements.manualBoardY.value || 0),
-        width: Number(elements.manualBoardW.value || 1),
-        height: Number(elements.manualBoardH.value || 1),
-      },
-      state.detectionMeta.diceRect || null
-    );
-  });
-
   elements.applyDiceRoi.addEventListener("click", function onApplyDiceRoi() {
     var boardRect = state.detectionMeta.boardRect || state.detectionMeta.eventRect;
     if (!boardRect) {
@@ -1659,6 +1636,14 @@
       height: Number(elements.manualDiceH.value || 1),
     });
   });
+
+  if (elements.debugToggle) {
+    elements.debugToggle.addEventListener("click", function() {
+      var body = elements.debugFloatBody;
+      var isOpen = body.classList.toggle("open");
+      elements.debugToggle.textContent = isOpen ? "✕ 디버그 닫기" : "🔍 디버그";
+    });
+  }
 
   elements.diceEditor.addEventListener("input", syncEditorState);
   elements.diceEditor.addEventListener("change", syncEditorState);
