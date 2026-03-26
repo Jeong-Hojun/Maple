@@ -572,6 +572,99 @@
     });
   }
 
+  // 특수 주사위 N개 보유 시 최적 기댓값 계산
+  // 순서 선택 + 어느 주사위에 특수 주사위를 쓸지 동시에 최적화
+  function solveWithSpecialDice(config, numSpecialDice) {
+    var board = normalizeBoard(config.board || []);
+    var dice = normalizeDice(config.dice || []);
+    var questionPolicy = config.questionPolicy || "higher";
+    var BOARD_SIZE = board.length;
+    var memo = new Map();
+
+    function landResult(fromPos, delta, mult) {
+      var rawPos = fromPos + delta;
+      var startBonus = delta > 0 ? Math.floor(rawPos / BOARD_SIZE) * START_PASS_BONUS : 0;
+      var landPos = mod(rawPos, BOARD_SIZE);
+      return { landPos: landPos, gain: startBonus + board[landPos].fertilizer * mult };
+    }
+
+    function questionEV(tile, ns, leftover, specialLeft) {
+      var li = mod(tile.leftTarget, BOARD_SIZE);
+      var ri = mod(tile.rightTarget, BOARD_SIZE);
+      var lv = search({ position: li, nextRollBonus: ns.nextRollBonus, nextRewardMultiplier: ns.nextRewardMultiplier }, leftover, specialLeft).ev;
+      var rv = search({ position: ri, nextRollBonus: ns.nextRollBonus, nextRewardMultiplier: ns.nextRewardMultiplier }, leftover, specialLeft).ev;
+      return questionPolicy === "average" ? (lv + rv) / 2 : Math.max(lv, rv);
+    }
+
+    function search(state, remaining, specialLeft) {
+      if (!remaining.length) return { ev: 0, steps: [] };
+      var key = [state.position, state.nextRollBonus, state.nextRewardMultiplier,
+                 remaining.map(function(d) { return d.id; }).sort().join("|"),
+                 specialLeft].join("~");
+      if (memo.has(key)) return memo.get(key);
+
+      var best = { ev: -Infinity, steps: [] };
+
+      remaining.forEach(function(die, di) {
+        var leftover = remaining.filter(function(_, i) { return i !== di; });
+
+        // — 일반 사용 —
+        expandDieOptions(die).forEach(function(option) {
+          var mv = clampMinimum(option.move + state.nextRollBonus, 1);
+          var landIdx = mod(state.position + mv, BOARD_SIZE);
+          var tile = board[landIdx];
+          var ns = { position: landIdx, nextRollBonus: 0, nextRewardMultiplier: 1 };
+          var g = Number(option.bonusFertilizer || 0) +
+                  tile.fertilizer * Number(state.nextRewardMultiplier || 1) * Number(option.rewardMultiplier || 1);
+          g += applyEffect(ns, tile.effectType, Number(tile.effectValue || 0));
+          var futResult = tile.type === "question"
+            ? { ev: questionEV(tile, ns, leftover, specialLeft), steps: [] }
+            : search(ns, leftover, specialLeft);
+          var tot = g + futResult.ev;
+          if (tot > best.ev) {
+            best = { ev: tot, steps: [{ dieLabel: die.label, useSpecial: false, move: mv, landIdx: landIdx, gain: roundTwo(g) }].concat(futResult.steps) };
+          }
+        });
+
+        // — 특수 주사위 사용 —
+        if (specialLeft > 0) {
+          var sumG = 0, sumFut = 0;
+          SPECIAL_DICE_EFFECTS.forEach(function(effect) {
+            var delta = effect.moveFn(die.value) + state.nextRollBonus;
+            var lr = landResult(state.position, delta, effect.mult);
+            var tile = board[lr.landPos];
+            var ns = { position: lr.landPos, nextRollBonus: 0, nextRewardMultiplier: 1 };
+            var g = lr.gain;
+            g += applyEffect(ns, tile.effectType, Number(tile.effectValue || 0));
+            sumG += g;
+            sumFut += tile.type === "question"
+              ? questionEV(tile, ns, leftover, specialLeft - 1)
+              : search(ns, leftover, specialLeft - 1).ev;
+          });
+          var tot = (sumG + sumFut) / 6;
+          if (tot > best.ev) {
+            best = { ev: tot, steps: [{ dieLabel: die.label, useSpecial: true, gain: roundTwo(sumG / 6) }] };
+          }
+        }
+      });
+
+      memo.set(key, best);
+      return best;
+    }
+
+    var result = search(
+      { position: Number(config.currentPosition || 0), nextRollBonus: 0, nextRewardMultiplier: 1 },
+      dice,
+      numSpecialDice
+    );
+    return { numSpecialDice: numSpecialDice, expectedGain: roundTwo(result.ev), firstStep: result.steps[0] || null };
+  }
+
+  // 0~3개 시나리오 한번에 반환
+  function analyzeAllSpecialScenarios(config) {
+    return [0, 1, 2, 3].map(function(n) { return solveWithSpecialDice(config, n); });
+  }
+
   globalScope.GardenSolver = {
     EFFECT_LABELS: EFFECT_LABELS,
     SPECIAL_LABELS: SPECIAL_LABELS,
@@ -580,6 +673,7 @@
     normalizeBoard: normalizeBoard,
     normalizeDice: normalizeDice,
     analyzeSpecialDice: analyzeSpecialDice,
+    analyzeAllSpecialScenarios: analyzeAllSpecialScenarios,
   };
 
   if (typeof module !== "undefined" && module.exports) {

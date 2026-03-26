@@ -290,36 +290,30 @@
       return;
     }
 
-    var analysis = window.GardenSolver.analyzeSpecialDice({
-      currentPosition: state.currentPosition,
-      board: state.board,
-      dice: state.dice,
-    });
+    var cfg = { currentPosition: state.currentPosition, board: state.board, dice: state.dice, questionPolicy: state.questionPolicy };
+    var scenarios = window.GardenSolver.analyzeAllSpecialScenarios(cfg);
+    var baseEV = scenarios[0].expectedGain;
 
-    // 가장 유리한 주사위 찾기
-    var bestIdx = 0;
-    analysis.forEach(function(a, i) { if (a.delta > analysis[bestIdx].delta) bestIdx = i; });
-
-    var rows = analysis.map(function(a, i) {
-      var sign = a.delta >= 0 ? "+" : "";
-      var verdict = a.delta >= 0
-        ? '<span style="color:#2a8a4a">▲ 유리 (' + sign + a.delta + ')</span>'
-        : '<span style="color:#c0392b">▼ 불리 (' + sign + a.delta + ')</span>';
-      var highlight = i === bestIdx && a.delta > 0 ? ' style="background:rgba(42,138,74,0.08)"' : '';
-      var effectTip = a.effectResults.map(function(e) {
-        return e.name + "→" + e.landPos + "번(+" + e.gain + ")";
-      }).join(" / ");
-      return "<tr" + highlight + ">" +
-        "<td><strong>" + escapeHtml(a.dieLabel) + " (" + a.dieValue + ")</strong></td>" +
-        "<td>" + a.normalLandPos + "번 → +" + a.normalGain + "</td>" +
-        "<td><strong>+" + a.specialEV + "</strong></td>" +
-        "<td>" + verdict + "</td>" +
-        "<td style='font-size:0.7rem;color:var(--muted)'>" + escapeHtml(effectTip) + "</td>" +
-        "</tr>";
+    var rows = scenarios.map(function(s) {
+      var diff = roundTwo(s.expectedGain - baseEV);
+      var diffStr = diff === 0 ? "-" : (diff > 0 ? '<span style="color:#2a8a4a">+' + diff + '</span>' : '<span style="color:#c0392b">' + diff + '</span>');
+      var action = "";
+      if (s.firstStep) {
+        if (s.firstStep.useSpecial) {
+          action = "<strong>" + escapeHtml(s.firstStep.dieLabel) + "에 특수 주사위 사용</strong> (기대 +" + s.firstStep.gain + ")";
+        } else {
+          action = escapeHtml(s.firstStep.dieLabel) + " 먼저 사용 → " + s.firstStep.landIdx + "번칸(+" + s.firstStep.gain + ")";
+        }
+      }
+      var highlight = s.numSpecialDice > 0 && diff > 0 ? ' style="background:rgba(42,138,74,0.07)"' : '';
+      return "<tr" + highlight + "><td><strong>" + s.numSpecialDice + "개</strong></td>" +
+        "<td><strong>" + s.expectedGain + "</strong></td>" +
+        "<td>" + diffStr + "</td>" +
+        "<td style='font-size:0.78rem'>" + action + "</td></tr>";
     });
 
     el.innerHTML =
-      '<table><thead><tr><th>주사위</th><th>일반 이동</th><th>특수 기댓값</th><th>판정</th><th>효과별 착지</th></tr></thead>' +
+      '<table><thead><tr><th>특수 주사위</th><th>최적 기댓값</th><th>증가분</th><th>첫 수 권장</th></tr></thead>' +
       '<tbody>' + rows.join("") + '</tbody></table>';
   }
 
